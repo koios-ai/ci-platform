@@ -20,8 +20,13 @@ final-review cadence by themselves.
 > attestation for CodeRabbit and Codex, plus a bounded supported-release
 > manifest for staged fleet upgrades. The no-PAT dispatch topology is locally
 > implemented but remains hosted-unverified.
-> Hosted canary generation 2 verifies stale final-label invalidation only; it
-> does not change release or cutover authority.
+> Hosted canary generation 2 exposed a least-privilege mismatch: a same-repo
+> trusted-base controller received `issues: write` but GitHub rejected both PR
+> label deletions with HTTP 403. The repair requests only
+> `pull-requests: write`; it remains unverified until that exact workflow is on
+> the protected default branch and a new labeled lifecycle canary proves both
+> deletions and absence readback. This does not change release or cutover
+> authority.
 
 ## Closed reusable contract
 
@@ -372,8 +377,15 @@ installed platform canary workflow. It runs from the exact protected-base
 source on every new commit, reopen, or conversion to draft; removes both
 `ci-final` and `ai-review-ready`; retries only labels still present on an
 exact-head/lifecycle readback; and fails if absence cannot be proved.
-`invalidation_controller_verified` still defaults to false until a hosted
-canary proves event delivery, removal, and absence readback.
+The first two hosted delete canaries failed closed with HTTP 403 while the job
+received `issues: write` and `pull-requests: read`. GitHub documents the PR-label
+endpoint as accepting Pull requests write, so all label-mutating controller
+roles now request `pull-requests: write` and no Issues permission. Repository
+Issues remains disabled; broader workflow-token and PR-approval settings remain
+disabled. `invalidation_controller_verified` still defaults to false until the
+repaired workflow is on the protected default branch and a hosted labeled
+lifecycle canary proves event delivery, both deletions, and final absence
+readback.
 `ready_for_review` must never re-finalize automatically. Existing checks remain
 attached to an old SHA after a new commit and cannot satisfy the new head, but
 same-SHA lifecycle reuse still requires external enforcement.

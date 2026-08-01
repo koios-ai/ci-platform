@@ -423,7 +423,7 @@ def test_platform_installs_a_trusted_lifecycle_invalidator_canary() -> None:
     assert workflow["concurrency"]["cancel-in-progress"] is True
     job = workflow["jobs"]["invalidate-final-labels"]
     assert job["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
-    assert job["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
     checkout, action = iter_steps(job)
     assert checkout["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     assert checkout["with"] == {
@@ -452,8 +452,7 @@ def test_exact_head_finalizer_uses_github_native_non_cancelling_singleflight() -
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     }
     assert job["env"]["KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED"] == ("${{ vars.KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED }}")
     command = next(str(step["run"]) for step in iter_steps(job) if "run" in step)
@@ -647,8 +646,7 @@ def test_final_success_promoter_is_exact_head_fail_closed_and_not_a_check_writer
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     }
     assert promoter["env"]["CI_PLATFORM_ROLE"] == "ai-review-promoter"
     condition = str(promoter["if"])
@@ -747,7 +745,7 @@ def test_pr_head_execution_is_read_only_secret_free_and_without_oidc() -> None:
                 "persist-credentials": False,
                 "sparse-checkout": ".github/actions/invalidate-final-labels",
             }
-            assert permissions == {"contents": "read", "issues": "write", "pull-requests": "read"}
+            assert permissions == {"contents": "read", "pull-requests": "write"}
             continue
         assert permissions == {"contents": "read"}, (workflow_name, job_id, permissions)
         assert "id-token" not in permissions
