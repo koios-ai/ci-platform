@@ -144,6 +144,12 @@ named `LEGACY / inactive fast diagnostics`, so it cannot publish the stable
 `CI / required` context. Therefore
 the five mapped profile workflows are the complete source-bound
 `pull_request` plus `merge_group` candidate set for v1.
+Legacy workflows must still parse before hosted evidence can run: `job.*` and
+`runner.*` contexts are forbidden in job-level environment maps. Immutable
+workflow provenance is bound in step-level environment maps, while runner temp
+paths are exported by the first shell step through `GITHUB_ENV`. The
+PowerShell test wrapper derives every owned artifact path with `Join-Path`, so
+cleanup remains contained on Windows and Linux runners.
 
 The 2026-07-27 organization readback shows GitHub Code Quality disabled (the UI
 offers `Enable Code Quality`), with no context, threshold, configuration, or

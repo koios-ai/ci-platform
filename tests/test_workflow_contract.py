@@ -825,6 +825,65 @@ def test_no_secret_inheritance_or_input_interpolation_in_shell() -> None:
                 assert "${{ inputs." not in run, (path.name, step.get("name"))
 
 
+def test_job_level_env_never_uses_contexts_unavailable_at_job_scope() -> None:
+    """Catches zero-job workflow parse failures from job/runner contexts in a job env map."""
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    validator_path = ROOT / "scripts" / "validate_ci_platform_v1.py"
+    spec = importlib.util.spec_from_file_location("ci_platform_job_env_validator", validator_path)
+    assert spec is not None and spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = load_workflow(path.name)
+        for job_id, job in workflow.get("jobs", {}).items():
+            for name, value in job.get("env", {}).items():
+                raw = str(value)
+                assert not validator.job_env_uses_unavailable_context(raw), (
+                    path.name,
+                    job_id,
+                    name,
+                )
+
+
+def test_legacy_workflows_bind_runner_paths_and_provenance_at_step_scope() -> None:
+    """Catches moving valid runtime provenance or temp paths back into job-level env."""
+    required = load_workflow("required.yml")["jobs"]["required"]
+    assert set(required["env"]) == {"HEAD_SHA", "BASE_SHA"}
+    required_init = required["steps"][0]
+    assert required_init["name"] == "Initialize runner-scoped paths"
+    assert required_init["shell"] == "bash"
+    required_run = str(required_init["run"])
+    for binding in (
+        "CHANGED_FILES_PATH=$RUNNER_TEMP/ci-platform-changed-files.json",
+        "FAST_SELECTION_PATH=$RUNNER_TEMP/ci-platform-fast-selection.json",
+        "FAST_EVIDENCE_PATH=$RUNNER_TEMP/ci-platform-fast-test-summary.json",
+    ):
+        assert binding in required_run
+    assert required_run.count('>> "$GITHUB_ENV"') == 1
+
+    reusable = load_workflow("reusable-final.yml")
+    validate = reusable["jobs"]["validate-contract"]
+    assert not {name for name in validate["env"] if name.startswith("PLATFORM_")}
+    validate_step = validate["steps"][0]
+    assert validate_step["name"] == "Validate contract inputs and platform provenance"
+    assert validate_step["env"] == {
+        "PLATFORM_SHA": "${{ job.workflow_sha }}",
+        "PLATFORM_REPOSITORY": "${{ job.workflow_repository }}",
+        "PLATFORM_WORKFLOW_REF": "${{ job.workflow_ref }}",
+        "PLATFORM_WORKFLOW_FILE_PATH": "${{ job.workflow_file_path }}",
+    }
+
+    deterministic = reusable["jobs"]["deterministic"]
+    assert "EVIDENCE_DIR" not in deterministic["env"]
+    evidence_init = deterministic["steps"][0]
+    assert evidence_init["name"] == "Initialize deterministic evidence path"
+    assert evidence_init["shell"] == "bash"
+    assert "EVIDENCE_DIR=$RUNNER_TEMP/ci-platform-evidence" in evidence_init["run"]
+    assert '>> "$GITHUB_ENV"' in evidence_init["run"]
+
+
 def test_retention_is_bounded_and_manifest_is_verified_before_upload() -> None:
     """Catches long-lived evidence and uploading unverified coverage bytes."""
     contract = load_contract()

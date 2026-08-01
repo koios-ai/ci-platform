@@ -84,6 +84,10 @@ def consumer_terminal_job_name(profile: str) -> str:
 
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
+JOB_ENV_UNAVAILABLE_DEREFERENCE = re.compile(
+    r"(?<![\w.])(?:job|runner)\b",
+    re.IGNORECASE,
+)
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 DEEPSOURCE_APP = {"id": 16372, "slug": "deepsource-io"}
 DEEPSOURCE_EXPECTED_CHECKS = [
@@ -111,6 +115,56 @@ DEEPSOURCE_SIGNAL_CHECKS = {
     "ai-review-readback": ["DeepSource: AI Review"],
     "coverage": ["DeepSource: Test coverage"],
 }
+
+
+def _github_expression_bodies(value: str) -> list[str]:
+    """Return expression bodies with quoted literals masked.
+
+    A delimiter-looking ``}}`` inside a quoted format string is content, not
+    the end of the GitHub expression. Masking literals also keeps prose such as
+    ``'runner.temp'`` from impersonating the unavailable runner root context.
+    """
+    bodies: list[str] = []
+    cursor = 0
+    while True:
+        start = value.find("${{", cursor)
+        if start < 0:
+            return bodies
+        index = start + 3
+        masked: list[str] = []
+        quote: str | None = None
+        while index < len(value):
+            character = value[index]
+            if quote is not None:
+                masked.append(" ")
+                if character == quote:
+                    if index + 1 < len(value) and value[index + 1] == quote:
+                        masked.append(" ")
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if character in {"'", '"'}:
+                quote = character
+                masked.append(" ")
+                index += 1
+                continue
+            if value.startswith("}}", index):
+                bodies.append("".join(masked))
+                cursor = index + 2
+                break
+            masked.append(character)
+            index += 1
+        else:
+            return bodies
+
+
+def job_env_uses_unavailable_context(value: str) -> bool:
+    """Whether a job-level env scalar dereferences the root job/runner context."""
+    return any(JOB_ENV_UNAVAILABLE_DEREFERENCE.search(body) for body in _github_expression_bodies(value))
+
+
 SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
 
 
@@ -1184,14 +1238,26 @@ def validate_workflow(root: Path) -> None:
     workflow_directory = root / ".github" / "workflows"
     for candidate_path in sorted((*workflow_directory.glob("*.yml"), *workflow_directory.glob("*.yaml"))):
         candidate = load_yaml(candidate_path)
+        candidate_jobs = candidate.get("jobs")
+        if not isinstance(candidate_jobs, dict):
+            raise ValueError(f"workflow has malformed jobs: {candidate_path.name}")
+        for job_id, job in candidate_jobs.items():
+            if not isinstance(job, dict):
+                raise ValueError(f"workflow has malformed job: {candidate_path.name}:{job_id}")
+            job_env = job.get("env", {})
+            if not isinstance(job_env, dict):
+                raise ValueError(f"workflow job env is malformed: {candidate_path.name}:{job_id}")
+            for name, value in job_env.items():
+                raw = str(value)
+                if job_env_uses_unavailable_context(raw):
+                    raise ValueError(
+                        f"workflow context is unavailable at job-level env scope: {candidate_path.name}:{job_id}:{name}"
+                    )
         candidate_event_names = workflow_event_names(candidate.get("on"))
         if not source_triggers & candidate_event_names:
             continue
         if candidate_path.name == internal_source_workflow:
             continue
-        candidate_jobs = candidate.get("jobs", {})
-        if not isinstance(candidate_jobs, dict):
-            raise ValueError(f"source-triggered workflow has malformed jobs: {candidate_path.name}")
         if any(
             not isinstance(job, dict) or not source_job_is_suppressed(job.get("if")) for job in candidate_jobs.values()
         ):

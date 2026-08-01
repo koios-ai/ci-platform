@@ -14,10 +14,12 @@ $artifactsParent = if ($env:CI_PLATFORM_TEST_ARTIFACTS_DIR) {
 New-Item -ItemType Directory -Force -Path $artifactsParent | Out-Null
 $temporaryRoot = Join-Path $artifactsParent ("ci-platform-pytest-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
+$baseTemp = Join-Path $temporaryRoot "basetemp"
+$junitPath = Join-Path $temporaryRoot "pytest-junit.xml"
 $exitCode = 1
 
 try {
-    & $Python -B -m pytest @PytestArguments -p no:cacheprovider "--basetemp=$temporaryRoot\basetemp" "--junitxml=$temporaryRoot\pytest-junit.xml"
+    & $Python -B -m pytest @PytestArguments -p no:cacheprovider "--basetemp=$baseTemp" "--junitxml=$junitPath"
     if ($null -ne $LASTEXITCODE) {
         $exitCode = $LASTEXITCODE
     }

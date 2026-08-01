@@ -250,7 +250,17 @@ def test_isolated_pytest_config_is_bounded_collision_safe_and_rejects_reparse_po
 
     assert config_path.parent.parent == tmp_path.resolve()
     assert config_path.name == "pytest.ini"
-    staged = module.stage_pytest_config(basetemp, tmp_path)
+    fsync_sizes: list[int] = []
+    real_fsync = module.os.fsync
+
+    def record_fsync(descriptor: int) -> None:
+        fsync_sizes.append(module.os.fstat(descriptor).st_size)
+        real_fsync(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "fsync", record_fsync)
+        staged = module.stage_pytest_config(basetemp, tmp_path)
+    assert fsync_sizes == [len(module.PYTEST_CONFIG.read_bytes())]
     assert staged == config_path
     assert staged.read_bytes() == module.PYTEST_CONFIG.read_bytes()
     assert not staged.stat().st_mode & (module.stat.S_IWUSR | module.stat.S_IWGRP | module.stat.S_IWOTH)
@@ -287,6 +297,18 @@ def test_isolated_pytest_config_is_bounded_collision_safe_and_rejects_reparse_po
         with pytest.raises(ValueError, match="not a regular directory"):
             module.remove_pytest_config_path(config_path.parent, tmp_path)
     config_path.parent.rmdir()
+
+
+def test_pytest_config_staging_uses_a_non_sensitive_name_and_preserves_atomic_durability() -> None:
+    """Catches a heuristic-sensitive helper name or weakened exclusive durable staging."""
+    source = POLICY_SCRIPT.read_text(encoding="utf-8")
+    assert "_trusted_pytest_config_bytes" not in source
+    assert "def _immutable_pytest_ini_bytes() -> bytes:" in source
+    assert 'with config_path.open("xb") as handle:' in source
+    assert "handle.write(_immutable_pytest_ini_bytes())" in source
+    assert "handle.flush()" in source
+    assert "os.fsync(handle.fileno())" in source
+    assert "config_path.chmod(stat.S_IREAD)" in source
 
 
 def test_generic_pre_v1_policy_remains_a_named_migration_blocker(

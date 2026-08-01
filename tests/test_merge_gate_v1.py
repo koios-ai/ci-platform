@@ -2022,6 +2022,71 @@ def test_continuous_validation_provisions_pinned_runtime_and_dependencies() -> N
     assert by_name["Test platform with plugins disabled"]["env"] == {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
 
 
+@pytest.mark.parametrize(
+    "forbidden",
+    [
+        "${{ job.workflow_sha }}",
+        "${{ runner.temp }}/evidence",
+        "${{job.workflow_sha}}",
+        "${{  runner.temp }}",
+        "${{ job['workflow_sha'] }}",
+        '${{ runner["temp"] }}',
+        "${{ job [ 'workflow_sha' ] }}",
+        "${{ JOB.workflow_sha }}",
+        "${{ format('{0}', runner.temp) }}",
+        "${{ format('{{literal}} {0}', runner.temp) }}",
+        "${{ github.actor != '' && job['workflow_sha'] }}",
+        "${{ toJSON(runner) }}",
+        "${{ toJSON(job) }}",
+        "${{\n  format('{0}', runner.temp)\n}}",
+    ],
+)
+def test_validator_rejects_job_env_contexts_unavailable_at_job_scope(tmp_path: Path, forbidden: str) -> None:
+    """Catches a workflow GitHub rejects before creating any job."""
+    fixture = copy_contract_fixture(tmp_path)
+    path = fixture / ".github/workflows/continuous-validation.yml"
+    raw = path.read_text(encoding="utf-8")
+    if "\n" in forbidden:
+        serialized_value = "      FORBIDDEN_CONTEXT: |-\n" + "".join(
+            f"        {line}\n" for line in forbidden.splitlines()
+        )
+    else:
+        serialized_value = "      FORBIDDEN_CONTEXT: " + forbidden + "\n"
+    raw = raw.replace(
+        "    name: Koios CI / source validation\n",
+        "    name: Koios CI / source validation\n    env:\n" + serialized_value,
+        1,
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unavailable at job-level env scope"):
+        load_validator().validate_workflow(fixture)
+
+
+@pytest.mark.parametrize(
+    "allowed",
+    [
+        "${{ vars.runner.temp }}",
+        "${{ 'runner.temp' }}",
+        "${{ format('runner.temp') }}",
+        "${{ contains('prefix runner.temp', vars.value) }}",
+        "${{ contains('it''s job.workflow_sha', vars.value) }}",
+    ],
+)
+def test_validator_allows_non_root_job_runner_text_in_job_env(tmp_path: Path, allowed: str) -> None:
+    """Distinguishes unavailable root contexts from properties and quoted text."""
+    fixture = copy_contract_fixture(tmp_path)
+    path = fixture / ".github/workflows/continuous-validation.yml"
+    raw = path.read_text(encoding="utf-8").replace(
+        "    name: Koios CI / source validation\n",
+        f"    name: Koios CI / source validation\n    env:\n      ALLOWED_CONTEXT_TEXT: {allowed}\n",
+        1,
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    load_validator().validate_workflow(fixture)
+
+
 def test_v1_validator_rejects_a_floating_control_plane_python_minor(tmp_path: Path) -> None:
     """Catches setup-python silently resolving a newer patch in admission jobs."""
     fixture = copy_contract_fixture(tmp_path)

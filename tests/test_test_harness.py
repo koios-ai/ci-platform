@@ -212,6 +212,17 @@ def test_powershell_wrapper_preserves_pytest_failure_after_cleanup(tmp_path: Pat
     assert not (tmp_path / "pytest-junit.xml").exists()
 
 
+def test_powershell_wrapper_uses_platform_native_paths_for_owned_artifacts() -> None:
+    """Catches backslash-built child paths escaping the owned temp root on Linux PowerShell."""
+    source = POWERSHELL_WRAPPER.read_text(encoding="utf-8")
+    assert '$baseTemp = Join-Path $temporaryRoot "basetemp"' in source
+    assert '$junitPath = Join-Path $temporaryRoot "pytest-junit.xml"' in source
+    assert '"--basetemp=$baseTemp"' in source
+    assert '"--junitxml=$junitPath"' in source
+    assert "$temporaryRoot\\basetemp" not in source
+    assert "$temporaryRoot\\pytest-junit.xml" not in source
+
+
 def test_shell_wrapper_preserves_pytest_failure_after_cleanup() -> None:
     """Catches a successful cleanup command masking a failed POSIX shell test run."""
     shell, shell_environment = _verified_bash()
