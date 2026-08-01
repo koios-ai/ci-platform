@@ -20,6 +20,8 @@ final-review cadence by themselves.
 > attestation for CodeRabbit and Codex, plus a bounded supported-release
 > manifest for staged fleet upgrades. The no-PAT dispatch topology is locally
 > implemented but remains hosted-unverified.
+> Hosted canary generation 2 verifies stale final-label invalidation only; it
+> does not change release or cutover authority.
 
 ## Closed reusable contract
 
