@@ -1,0 +1,2 @@
+# Legacy dependency surface intentionally lacks an exact registry pin.
+example-dependency>=1

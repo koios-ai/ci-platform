@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "test_roots": [
+    "tests"
+  ],
+  "marker_exclusions": [
+    "slow"
+  ],
+  "disabled_plugins": [
+    "benchmark"
+  ],
+  "coverage_sources": [
+    "src"
+  ],
+  "critical_tests": {
+    "leakage": [
+      "tests/test_leakage_contract.py"
+    ],
+    "lineage": [
+      "tests/test_lineage_contract.py"
+    ],
+    "schema": [
+      "tests/test_schema_contract.py"
+    ],
+    "parity": [
+      "tests/test_parity_contract.py"
+    ],
+    "model": [
+      "tests/test_model_contract.py"
+    ]
+  },
+  "unexpected_skip_policy": "fail"
+}

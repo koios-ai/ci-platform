@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "test_roots": [],
+  "marker_exclusions": [],
+  "disabled_plugins": [],
+  "coverage_sources": [],
+  "critical_tests": {
+    "leakage": [],
+    "lineage": [],
+    "model": [],
+    "parity": [],
+    "schema": []
+  },
+  "unexpected_skip_policy": "fail"
+}

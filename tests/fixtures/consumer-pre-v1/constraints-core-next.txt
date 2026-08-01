@@ -1,0 +1,2 @@
+# Legacy constraint surface intentionally lacks an exact registry pin.
+example-dependency<2

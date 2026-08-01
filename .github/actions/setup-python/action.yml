@@ -1,0 +1,14 @@
+name: Setup pinned Python
+description: Install a pinned Python runtime with an optional pip cache.
+inputs:
+  python-version:
+    description: Python version from the closed CI platform contract.
+    required: false
+    default: "3.12"
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: ${{ inputs.python-version }}

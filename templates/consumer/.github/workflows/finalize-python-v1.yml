@@ -1,0 +1,89 @@
+name: Exact-head finalizer controller
+run-name: koios-finalizer-v1|repo=${{ github.repository_id }}|pr=${{ inputs.pull_request_number }}|head=${{ inputs.head_sha }}|base=${{ inputs.base_sha }}|subject=${{ inputs.subject_run_id }}|attempt=${{ inputs.subject_run_attempt }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Exact pull request selected by the trusted subject run.
+        required: true
+        type: string
+      head_sha:
+        description: Exact pull-request head selected by the trusted subject run.
+        required: true
+        type: string
+      base_sha:
+        description: Exact protected-base commit selected by the trusted subject run.
+        required: true
+        type: string
+      subject_run_id:
+        description: Immutable successful subject workflow run ID.
+        required: true
+        type: string
+      subject_run_attempt:
+        description: Exact successful subject workflow attempt.
+        required: true
+        type: string
+      subject_workflow_id:
+        description: Numeric workflow ID of final-subject-v1.yml.
+        required: true
+        type: string
+      subject_workflow_path:
+        description: Protected default-branch subject workflow path.
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: koios-finalizer-v1-${{ github.repository_id }}-${{ inputs.pull_request_number }}-${{ inputs.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Revalidate and finalize the exact head
+    if: github.actor == 'github-actions[bot]' && github.triggering_actor == 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      CI_PLATFORM_ROLE: exact-head-finalizer
+      PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+      KOIOS_FINAL_WORKFLOW_ID: ${{ inputs.subject_workflow_id }}
+      KOIOS_FINAL_WORKFLOW_PATH: ${{ inputs.subject_workflow_path }}
+      KOIOS_PLATFORM_SHA: __CI_PLATFORM_FULL_SHA__
+      KOIOS_FINAL_WORKFLOW_EVENT: workflow_dispatch
+      KOIOS_FINAL_SOURCE_PATH: koios-ai/ci-platform/.github/workflows/reusable-final.yml@__CI_PLATFORM_FULL_SHA__
+      KOIOS_FINAL_PROMOTER_LOGIN: github-actions[bot]
+      KOIOS_FINAL_PROMOTER_ID: "41898282"
+      KOIOS_FINAL_PROMOTER_TYPE: Bot
+      KOIOS_SUBJECT_RUN_ID: ${{ inputs.subject_run_id }}
+      KOIOS_SUBJECT_RUN_ATTEMPT: ${{ inputs.subject_run_attempt }}
+      KOIOS_PROVIDER_CONTRACT_VERIFIED: ${{ vars.KOIOS_PROVIDER_CONTRACT_VERIFIED }}
+      KOIOS_CODEX_HOSTED_CANARY_VERIFIED: ${{ vars.KOIOS_CODEX_HOSTED_CANARY_VERIFIED }}
+      KOIOS_INVALIDATION_CONTROLLER_VERIFIED: ${{ vars.KOIOS_INVALIDATION_CONTROLLER_VERIFIED }}
+      KOIOS_LATEST_RUN_INVENTORY_VERIFIED: ${{ vars.KOIOS_LATEST_RUN_INVENTORY_VERIFIED }}
+      KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED: ${{ vars.KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED }}
+    steps:
+      - name: Check out the immutable finalizer implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: koios-ai/ci-platform
+          ref: __CI_PLATFORM_FULL_SHA__
+          persist-credentials: false
+          path: .koios-ci-platform
+          sparse-checkout: scripts/koios_ci.py
+      - name: Finalize only after complete hosted revalidation
+        shell: bash
+        run: >-
+          python .koios-ci-platform/scripts/koios_ci.py finalize
+          --repo "$GITHUB_REPOSITORY"
+          --pr "$PULL_REQUEST_NUMBER"
+          --timeout-seconds 900
+          --poll-seconds 30

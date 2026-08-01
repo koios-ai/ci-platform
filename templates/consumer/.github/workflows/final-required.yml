@@ -1,0 +1,193 @@
+name: Final deterministic evidence
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: final-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ github.event.label.name == 'ci-final' && 'candidate' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  final-preflight:
+    name: Final candidate preflight
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ci-final'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+    outputs:
+      ready: ${{ steps.preflight.outputs.ready }}
+      profile: ${{ steps.preflight.outputs.profile }}
+      head_sha: ${{ steps.preflight.outputs.head_sha }}
+      base_sha: ${{ steps.preflight.outputs.base_sha }}
+      changed_files_digest: ${{ steps.preflight.outputs.changed_files_digest }}
+    env:
+      CI_PLATFORM_ROLE: final-preflight
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify current candidate and fast run
+        id: preflight
+        uses: koios-ai/ci-platform/.github/actions/final-preflight@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          event_head_sha: ${{ github.event.pull_request.head.sha }}
+          event_base_sha: ${{ github.event.pull_request.base.sha }}
+          required_fast_context: CI / required
+          required_fast_workflow_id: ${{ vars.CI_REQUIRED_WORKFLOW_ID }}
+
+  platform-final:
+    name: Immutable platform final evidence
+    needs: [final-preflight]
+    if: needs.final-preflight.outputs.ready == 'true'
+    permissions:
+      actions: read
+      contents: read
+    uses: koios-ai/ci-platform/.github/workflows/reusable-final.yml@__CI_PLATFORM_FULL_SHA__
+    with:
+      profile: ${{ needs.final-preflight.outputs.profile }}
+      head_sha: ${{ needs.final-preflight.outputs.head_sha }}
+      base_sha: ${{ needs.final-preflight.outputs.base_sha }}
+      changed_files_digest: ${{ needs.final-preflight.outputs.changed_files_digest }}
+      python_version: "3.12"
+      artifact_retention_days: 3
+
+  coverage-upload:
+    name: Trusted OIDC coverage upload
+    needs: [final-preflight, platform-final]
+    if: >-
+      needs.platform-final.result == 'success' &&
+      needs.platform-final.outputs.deterministic_passed == 'true' &&
+      needs.platform-final.outputs.security_passed == 'true' &&
+      needs.platform-final.outputs.coverage_passed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      CI_PLATFORM_ROLE: coverage-uploader
+    steps:
+      - name: Download same-run evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: final-evidence-${{ needs.final-preflight.outputs.head_sha }}
+      - name: Verify evidence before upload
+        uses: koios-ai/ci-platform/.github/actions/verify-evidence@__CI_PLATFORM_FULL_SHA__
+        with:
+          expected_head_sha: ${{ needs.final-preflight.outputs.head_sha }}
+          expected_evidence_digest: ${{ needs.platform-final.outputs.evidence_digest }}
+      - name: Upload coverage through OIDC
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          files: coverage.xml
+          disable_search: true
+          use_oidc: true
+          fail_ci_if_error: true
+
+  publish-security:
+    name: Publish exact security context
+    needs: [final-preflight, platform-final]
+    if: >-
+      always() &&
+      needs.final-preflight.result == 'success' &&
+      needs.final-preflight.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      conclusion: ${{ steps.publish.outputs.conclusion }}
+    env:
+      CI_PLATFORM_ROLE: security-context-publisher
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Publish security result
+        id: publish
+        uses: koios-ai/ci-platform/.github/actions/publish-final-contexts@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          expected_head_sha: ${{ needs.final-preflight.outputs.head_sha }}
+          evidence_digest: ${{ needs.platform-final.outputs.evidence_digest }}
+          upstream_result: ${{ needs.platform-final.result }}
+          gate_passed: ${{ needs.platform-final.outputs.security_passed }}
+          coverage_upload_result: not-applicable
+
+  publish-coverage:
+    name: Publish exact coverage context
+    needs: [final-preflight, platform-final, coverage-upload]
+    if: >-
+      always() &&
+      needs.final-preflight.result == 'success' &&
+      needs.final-preflight.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: read
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      conclusion: ${{ steps.publish.outputs.conclusion }}
+    env:
+      CI_PLATFORM_ROLE: final-context-publisher
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Publish coverage result
+        id: publish
+        uses: koios-ai/ci-platform/.github/actions/publish-final-contexts@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          expected_head_sha: ${{ needs.final-preflight.outputs.head_sha }}
+          evidence_digest: ${{ needs.platform-final.outputs.evidence_digest }}
+          upstream_result: ${{ needs.platform-final.result }}
+          gate_passed: ${{ needs.platform-final.outputs.coverage_passed }}
+          coverage_upload_result: ${{ needs.coverage-upload.result }}
+
+  promote-ai-review:
+    name: Promote exact head to final AI review
+    needs: [final-preflight, publish-security, publish-coverage]
+    if: >-
+      always() &&
+      needs.final-preflight.result == 'success' &&
+      needs.final-preflight.outputs.ready == 'true' &&
+      needs.publish-security.result == 'success' &&
+      needs.publish-security.outputs.published == 'true' &&
+      needs.publish-security.outputs.conclusion == 'success' &&
+      needs.publish-coverage.result == 'success' &&
+      needs.publish-coverage.outputs.published == 'true' &&
+      needs.publish-coverage.outputs.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      CI_PLATFORM_ROLE: ai-review-promoter
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Revalidate exact final contexts and promote
+        uses: koios-ai/ci-platform/.github/actions/promote-ai-review@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          expected_head_sha: ${{ needs.final-preflight.outputs.head_sha }}
+          security_conclusion: ${{ needs.publish-security.outputs.conclusion }}
+          coverage_conclusion: ${{ needs.publish-coverage.outputs.conclusion }}

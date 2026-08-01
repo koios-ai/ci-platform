@@ -1,0 +1,49 @@
+name: Exact-head final subject
+run-name: koios-final-subject-v1|repo=${{ github.repository_id }}|pr=${{ inputs.pull_request_number }}|head=${{ inputs.head_sha }}|base=${{ inputs.base_sha }}|platform=__CI_PLATFORM_FULL_SHA__
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Exact pull request selected by trusted final preflight.
+        required: true
+        type: string
+      head_sha:
+        description: Exact pull-request head selected by trusted final preflight.
+        required: true
+        type: string
+      base_sha:
+        description: Exact protected-base commit selected by trusted final preflight.
+        required: true
+        type: string
+      changed_files_digest:
+        description: SHA-256 of the canonical changed-file list.
+        required: true
+        type: string
+      profile:
+        description: Closed platform profile.
+        required: true
+        type: choice
+        options: [baseline, python, node, powershell, critical-ml]
+
+permissions: {}
+
+concurrency:
+  group: koios-final-subject-v1-${{ github.repository_id }}-${{ inputs.pull_request_number }}-${{ inputs.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  platform-final:
+    name: Immutable platform final subject
+    if: github.actor == 'github-actions[bot]' && github.triggering_actor == 'github-actions[bot]'
+    permissions:
+      actions: read
+      contents: read
+    uses: koios-ai/ci-platform/.github/workflows/reusable-final.yml@__CI_PLATFORM_FULL_SHA__
+    with:
+      profile: ${{ inputs.profile }}
+      head_sha: ${{ inputs.head_sha }}
+      base_sha: ${{ inputs.base_sha }}
+      changed_files_digest: ${{ inputs.changed_files_digest }}
+      python_version: "3.12"
+      artifact_retention_days: 3

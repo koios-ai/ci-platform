@@ -1,0 +1,44 @@
+name: Promote exact head to final AI review
+description: Add ai-review-ready only after exact owned Security and Coverage checks pass.
+inputs:
+  pull_request_number:
+    description: Pull request number from the pull_request_target event.
+    required: true
+  expected_head_sha:
+    description: API-confirmed current pull-request head SHA.
+    required: true
+  security_conclusion:
+    description: Same-run Security publisher conclusion.
+    required: true
+  coverage_conclusion:
+    description: Same-run Coverage publisher conclusion.
+    required: true
+outputs:
+  promoted:
+    description: True only after label addition and exact-head readback.
+    value: ${{ steps.promote.outputs.promoted }}
+runs:
+  using: composite
+  steps:
+    - name: Revalidate final contexts and promote exact head
+      id: promote
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        INPUT_SECURITY_CONCLUSION: ${{ inputs.security_conclusion }}
+        INPUT_COVERAGE_CONCLUSION: ${{ inputs.coverage_conclusion }}
+        RUNTIME_API_URL: ${{ github.api_url }}
+        RUNTIME_SERVER_URL: ${{ github.server_url }}
+        RUNTIME_EVENT_NAME: ${{ github.event_name }}
+        RUNTIME_JOB_ID: ${{ github.job }}
+        RUNTIME_RUN_ID: ${{ github.run_id }}
+        RUNTIME_RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNTIME_REPOSITORY_ID: ${{ github.repository_id }}
+        RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}
+        RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+      run: python "$GITHUB_ACTION_PATH/promote_ai_review.py"

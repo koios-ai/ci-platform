@@ -1,0 +1,482 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/koios-ai/ci-platform/blob/main/contract/deepsource-parity-v1.schema.json",
+  "title": "DeepSource signal disposition parity v2",
+  "x-koios-ci-canary-expectations-v1": {
+    "version": 1,
+    "attestation": {
+      "algorithm": "rsa-pkcs1v15-sha256",
+      "key_id": "koios-ci-deepsource-canary-2026-07",
+      "public_key": {
+        "kty": "RSA",
+        "n": "afb5bb60aebf103eb250c3ba73786194d80d13a37b4234ab2c9e772da6e9c8367aa07abf807fd1af31ca47367c5b6b0e59cc206561c48433c2d7cfa71dae139aca2ef9dcc3e250a81c03c480250cdc58dfa5d8f34e54a200835f0ee8442ee064ee91ca8822be0bc67e9bdcee3dbc34e6c43a008c7c80ae9f7d1104925079fda7a83835b58e23f8c189496edcf91599a6cd894fc04128399376fb2f188809e0f99ef3a18b5c398ab4b740323bad672dcd2e9dc045250891bc723f735899fccfbe84b9cc6fe037001367cf999e6b6e5d4899dc6b56cc9cd4468dc037cd06040e46f1aed1727d4ee39f32266061a9a35a9bab57b548a6cbe42c5378ef5fa44110e9",
+        "e": 65537
+      },
+      "public_key_sha256": "05a24f80bce15e0b4b68269ac01548c6c448c0230076f08d6b40b19423ae4af4"
+    },
+    "signals": {
+      "python-static-quality": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "323a292d9791b36a43312f625a9ec4794f20be230ac9a002436175dda1de6bda",
+          "stderr_sha256": "92b4c48c25bf34cad3f111378b3b698d30ae3b1c063061d0bdf59c04a710d621",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "92b4c48c25bf34cad3f111378b3b698d30ae3b1c063061d0bdf59c04a710d621"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "ab68671a29c9114284fbf8f5d8ce4b1e643cb4998ab16b7e1cb51ff683d45f46",
+          "stderr_sha256": "3468a223ef0042833932c5aa6f1b1d0b798258db86e38a02c2907a7b2be580e8",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "3468a223ef0042833932c5aa6f1b1d0b798258db86e38a02c2907a7b2be580e8"
+        }
+      },
+      "ruff-transformer": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "ec0a206fb2071698fa6766b40799ebd2648233bff3816965261802078debb54f",
+          "stderr_sha256": "9901f2b22718df302dff53ddfd01f6f8f664bb9f4eb7660fd80e8b54fdfc99bc",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "9901f2b22718df302dff53ddfd01f6f8f664bb9f4eb7660fd80e8b54fdfc99bc"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "47a657b498b05d3b2236a264196273b6347231983c41593b298c83e092affe73",
+          "stderr_sha256": "b278e472f0b706195d1259d22986d8551b22f6568e3dec2e045c5c55a3dd8a6f",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "b278e472f0b706195d1259d22986d8551b22f6568e3dec2e045c5c55a3dd8a6f"
+        }
+      },
+      "sca": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "a9e29085c308b11800fdd75b0d12f4c2a85d23c7d794d0e216ab2817f414e29a",
+          "stderr_sha256": "5e846e1c48b59101e470a2fba303e3dcfcfee62c28f282ec0e345a44bee96bcf",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "5e846e1c48b59101e470a2fba303e3dcfcfee62c28f282ec0e345a44bee96bcf"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "f9348e4da1823ac6a25da649ed52763d4783b2c480a6233628750f2f841b48a2",
+          "stderr_sha256": "3471a5f80b19fad72437e4a3a2db5ac1c8047533fe5ae78aefb6540939038f71",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "3471a5f80b19fad72437e4a3a2db5ac1c8047533fe5ae78aefb6540939038f71"
+        }
+      },
+      "secrets": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "a9c750c149959871347a1213374b469fbfa946a503fac1fc5db1dc530ce88f64",
+          "stderr_sha256": "067248d8bd2e12885ba1f708a1328fb7a6191cdd4b89778c1c9e101be410bc66",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "067248d8bd2e12885ba1f708a1328fb7a6191cdd4b89778c1c9e101be410bc66"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "35aaeb7ea91be4c12ac49aa9147d886da39f1767e826fb05f8ec09721d58afdc",
+          "stderr_sha256": "029970a9cd95e7f4ab97ca94569ddeeb6d7c801a0cc5a05b0f13e3148a823297",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "029970a9cd95e7f4ab97ca94569ddeeb6d7c801a0cc5a05b0f13e3148a823297"
+        }
+      },
+      "docker-compose-config": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "5261367a4442449ddd041ef7b68642efc2fd7d5c0f094465e9322c4fa4580e8b",
+          "stderr_sha256": "86d5416b357ba9cb4684ddd733bb1f0308abc5d6c99dbe21836148f823d3fd34",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "86d5416b357ba9cb4684ddd733bb1f0308abc5d6c99dbe21836148f823d3fd34"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "11c236a6eb9afbb3c88b24174f0b3a0c408d8c7db755628aedaef786f5bbfd86",
+          "stderr_sha256": "e178d8e29ff69535b3a7f27478cbb12385a6a1d0f89b1014533923b5940ff074",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "e178d8e29ff69535b3a7f27478cbb12385a6a1d0f89b1014533923b5940ff074"
+        }
+      },
+      "adapter-integrity": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "fadf666004f36636fdc4ff900afdd966d5d43594e493eed594236140bf399eef",
+          "stderr_sha256": "b0705d1727a9374d25cc6cfda94afd2534f6df182fba12bf38cb054881c80a52",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "b0705d1727a9374d25cc6cfda94afd2534f6df182fba12bf38cb054881c80a52"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "d5236fde5b5a830b171187b1e48859ed4a24dd3e4235ece8b7add731180dc7b3",
+          "stderr_sha256": "c01a0caa214f9b54d0e6a5de4bc9649b2e3817880d32cc349764de0cc0e3288d",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "c01a0caa214f9b54d0e6a5de4bc9649b2e3817880d32cc349764de0cc0e3288d"
+        }
+      },
+      "ai-review-readback": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "a5ebc96da984b9938a8a9e8c9d4f9e7fc805aad3fb75a1123937cb8afcaf4cd8",
+          "stderr_sha256": "1c0bef8d8f02f2c51a6c24269c3b092c04d2b63b512af7e969244334a943d9a2",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "1c0bef8d8f02f2c51a6c24269c3b092c04d2b63b512af7e969244334a943d9a2"
+        },
+        "negative": {
+          "exit": 3,
+          "stdout_sha256": "0659f17442717df3f637262adfffa55cc30371fc4c3e39a8b9dbea5f75d538ce",
+          "stderr_sha256": "4cc06a8a43f6e48169ad187fdcd37c18db1f8578694d05e1f57f45c32bff74bc",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "4cc06a8a43f6e48169ad187fdcd37c18db1f8578694d05e1f57f45c32bff74bc"
+        }
+      },
+      "coverage": {
+        "positive": {
+          "exit": 0,
+          "stdout_sha256": "8be7756dda79f2fe88d1bb271011ae6ab5109937a18210755ac8b325891e4363",
+          "stderr_sha256": "dfecdd71961cb8a8aa0b85b251784c88bd636b7a2bd4996facd418805b23f723",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "dfecdd71961cb8a8aa0b85b251784c88bd636b7a2bd4996facd418805b23f723"
+        },
+        "negative": {
+          "exit": 1,
+          "stdout_sha256": "80ae0af686e74456dfb2e45d207f8b5a576f44f635699598cf335aa529d49ac1",
+          "stderr_sha256": "184c714eacb1a8f94d40f3e46b67a89741697baaff11a6e58b4d27e930a5b3f4",
+          "diagnostic_stream": "stderr",
+          "diagnostic_sha256": "184c714eacb1a8f94d40f3e46b67a89741697baaff11a6e58b4d27e930a5b3f4"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "template_status",
+    "source_config_sha",
+    "hosted_inventory_artifact",
+    "hosted_inventory_observed_at",
+    "profiles",
+    "signals",
+    "disposition_preconditions"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "template_status": {"enum": ["blocked", "complete"]},
+    "repository": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "source_config_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "source_config_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "evidence_root": {"type": ["string", "null"], "minLength": 1},
+    "source_config_receipt": {"anyOf": [{"$ref": "#/$defs/receipt"}, {"type": "null"}]},
+    "canary_execution_attestation": {
+      "description": "RSA-signed canonical execution payload. Its item_canaries set must exactly equal the hosted static-rule and SCA capability inventories and bind each item to its owner/tool/version/config, command, fixture, captured output, diagnostic digest, nonzero exit, execution time, and parent negative proof.",
+      "anyOf": [{"$ref": "#/$defs/receipt"}, {"type": "null"}]
+    },
+    "hosted_inventory_artifact": {"anyOf": [{"$ref": "#/$defs/receipt"}, {"type": "null"}]},
+    "hosted_inventory_observed_at": {"type": ["string", "null"]},
+    "profiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["baseline", "python", "node", "powershell", "critical-ml"]}
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/signal"}
+    },
+    "disposition_preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["all_signals_proven", "live_ruleset_safe", "app_subscription_readbacks"],
+      "properties": {
+        "all_signals_proven": {"type": "boolean"},
+        "live_ruleset_safe": {"anyOf": [{"$ref": "#/$defs/receipt"}, {"type": "null"}]},
+        "app_subscription_readbacks": {"anyOf": [{"$ref": "#/$defs/receipt"}, {"type": "null"}]}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"template_status": {"const": "complete"}}, "required": ["template_status"]},
+      "then": {
+        "required": [
+          "repository",
+          "source_config_digest",
+          "evidence_root",
+          "source_config_receipt",
+          "canary_execution_attestation"
+        ],
+        "properties": {
+          "repository": {"type": "string"},
+          "source_config_sha": {"type": "string"},
+          "source_config_digest": {"type": "string"},
+          "evidence_root": {"type": "string"},
+          "source_config_receipt": {"$ref": "#/$defs/receipt"},
+          "canary_execution_attestation": {"$ref": "#/$defs/receipt"},
+          "hosted_inventory_artifact": {"$ref": "#/$defs/receipt"},
+          "hosted_inventory_observed_at": {"type": "string"},
+          "signals": {"items": {"$ref": "#/$defs/completeSignal"}},
+          "disposition_preconditions": {
+            "properties": {
+              "all_signals_proven": {"const": true},
+              "live_ruleset_safe": {"$ref": "#/$defs/receipt"},
+              "app_subscription_readbacks": {"$ref": "#/$defs/receipt"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "parity_status", "outcome", "gaps"],
+      "properties": {
+        "id": {
+          "enum": [
+            "python-static-quality",
+            "ruff-transformer",
+            "sca",
+            "secrets",
+            "docker-compose-config",
+            "adapter-integrity",
+            "ai-review-readback",
+            "coverage"
+          ]
+        },
+        "parity_status": {"enum": ["blocked", "gap", "proven"]},
+        "outcome": {
+          "description": "A complete non-AI signal may be retained for fixed-price unique defense or replaced after proven parity; usage-priced AI Review is disable-only.",
+          "enum": [
+            "retain-unique-defense-in-depth",
+            "replace-proven-duplicate",
+            "disable-usage-based-ai",
+            "blocked"
+          ]
+        },
+        "gaps": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "completeSignal": {
+      "allOf": [
+        {"$ref": "#/$defs/signal"},
+        {
+          "type": "object",
+          "required": [
+            "central_owner",
+            "command",
+            "pinned_tool_version",
+            "pinned_config_digest",
+            "scope",
+            "positive_canary",
+            "negative_canary",
+            "hosted_inventory"
+          ],
+          "properties": {
+            "parity_status": {"const": "proven"},
+            "gaps": {"maxItems": 0},
+            "central_owner": {"type": "string", "minLength": 1},
+            "command": {"type": "string", "minLength": 1},
+            "pinned_tool_version": {"type": "string", "minLength": 1},
+            "pinned_config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "scope": {"type": "string", "minLength": 1},
+            "positive_canary": {"$ref": "#/$defs/receipt"},
+            "negative_canary": {"$ref": "#/$defs/receipt"},
+            "hosted_inventory": {"$ref": "#/$defs/receipt"}
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "python-static-quality"}}},
+          "then": {
+            "required": ["rule_ids", "severity_threshold", "quality_threshold"],
+            "properties": {
+              "rule_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {"const": "python-static-quality"},
+              "outcome": {"const": "replace-proven-duplicate"}
+            },
+            "required": ["id", "outcome"]
+          },
+          "then": {
+            "required": ["rule_mappings"],
+            "properties": {
+              "rule_mappings": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"$ref": "#/$defs/replacementMapping"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "ruff-transformer"}}},
+          "then": {
+            "required": ["transformer_version", "ruff_version", "config_digest"],
+            "properties": {"config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "sca"}}},
+          "then": {
+            "required": ["manifests", "canonical_constraints", "optional_conda_surfaces"],
+            "properties": {
+              "canonical_constraints": {"type": "string", "minLength": 1},
+              "optional_conda_surfaces": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "present"],
+                  "properties": {
+                    "path": {"type": "string", "minLength": 1},
+                    "present": {"type": "boolean"}
+                  }
+                }
+              },
+              "manifests": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "profiles", "resolved_graph", "sbom"],
+                  "properties": {
+                    "path": {"type": "string", "minLength": 1},
+                    "profiles": {"type": "array", "minItems": 1, "uniqueItems": true},
+                    "resolved_graph": {"$ref": "#/$defs/receipt"},
+                    "sbom": {"$ref": "#/$defs/receipt"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {"const": "sca"},
+              "outcome": {"const": "replace-proven-duplicate"}
+            },
+            "required": ["id", "outcome"]
+          },
+          "then": {
+            "required": ["capability_mappings"],
+            "properties": {
+              "capability_mappings": {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "uniqueItems": true,
+                "items": {"$ref": "#/$defs/replacementMapping"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "secrets"}}},
+          "then": {
+            "required": ["scan_scope", "provider_trigger_gaps"],
+            "properties": {
+              "scan_scope": {"type": "array", "minItems": 1},
+              "provider_trigger_gaps": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "docker-compose-config"}}},
+          "then": {
+            "required": ["config_scope"],
+            "properties": {"config_scope": {"type": "array", "minItems": 1}}
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "adapter-integrity"}}},
+          "then": {
+            "required": ["adapter_contract_digest", "hosted_app"],
+            "properties": {
+              "adapter_contract_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "hosted_app": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "slug"],
+                "properties": {
+                  "id": {"type": "integer", "minimum": 1},
+                  "slug": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "ai-review-readback"}}},
+          "then": {
+            "required": [
+              "app_readback",
+              "subscription_readback",
+              "target_readback",
+              "enabled_readback",
+              "disabled_readback"
+            ],
+            "properties": {
+              "outcome": {"const": "disable-usage-based-ai"},
+              "app_readback": {"$ref": "#/$defs/receipt"},
+              "subscription_readback": {"$ref": "#/$defs/receipt"},
+              "target_readback": {"$ref": "#/$defs/receipt"},
+              "enabled_readback": {"const": false},
+              "disabled_readback": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"not": {"const": "ai-review-readback"}}}},
+          "then": {
+            "properties": {
+              "outcome": {
+                "enum": ["retain-unique-defense-in-depth", "replace-proven-duplicate"]
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"id": {"const": "coverage"}}},
+          "then": {"required": ["applicable"], "properties": {"applicable": {"type": "boolean"}}}
+        }
+      ]
+    },
+    "replacementMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_item_id", "central_owner", "negative_canary"],
+      "properties": {
+        "provider_item_id": {"type": "string", "minLength": 1},
+        "central_owner": {"type": "string", "minLength": 1},
+        "negative_canary": {
+          "description": "Per-item execution receipt whose complete semantic payload must exactly equal the corresponding RSA-signed item_canaries entry; recomputing ordinary receipt hashes cannot authorize replacement.",
+          "$ref": "#/$defs/receipt"
+        }
+      }
+    }
+  }
+}

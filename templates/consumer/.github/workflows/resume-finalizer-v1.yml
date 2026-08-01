@@ -1,0 +1,43 @@
+name: Resume exact-head finalizer
+run-name: koios-finalizer-resume-v1|repo=${{ github.repository_id }}|subject=${{ github.event.workflow_run.id }}|attempt=${{ github.event.workflow_run.run_attempt }}
+
+on:
+  workflow_run:
+    workflows: [Exact-head final subject]
+    branches: [main]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: koios-finalizer-resume-v1-${{ github.repository_id }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-finalizer:
+    name: Dispatch a new controller identity
+    if: >-
+      github.run_attempt == 1 &&
+      github.actor == 'github-actions[bot]' &&
+      github.triggering_actor == 'github-actions[bot]' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    env:
+      CI_PLATFORM_ROLE: finalizer-dispatcher
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Revalidate the exact subject and dispatch a new controller
+        uses: koios-ai/ci-platform/.github/actions/dispatch-finalizer@__CI_PLATFORM_FULL_SHA__
+        with:
+          subject_run_id: ${{ github.event.workflow_run.id }}
+          subject_run_attempt: ${{ github.event.workflow_run.run_attempt }}
+          subject_workflow_id: ${{ github.event.workflow_run.workflow_id }}
+          subject_workflow_path: .github/workflows/final-subject-v1.yml
+          finalizer_workflow_path: .github/workflows/finalize-python-v1.yml
+          default_branch: main

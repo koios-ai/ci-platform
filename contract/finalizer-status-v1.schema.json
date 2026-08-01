@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/koios-ai/ci-platform/blob/main/contract/finalizer-status-v1.schema.json",
+  "title": "Koios CI exact-head finalizer state v1",
+  "description": "Closed local cache/status shape. This document is never durable mutation authority; live GitHub readback and trusted same-run provenance remain authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "key",
+    "base_sha",
+    "phase",
+    "dry_run",
+    "workflow",
+    "controller_run",
+    "subject_run",
+    "gates",
+    "labels",
+    "providers",
+    "dependabot",
+    "rerun_requests",
+    "blockers",
+    "complete",
+    "updated_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "complete"
+        ]
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "complete"
+          },
+          "workflow": {
+            "type": "object"
+          },
+          "controller_run": {
+            "type": "object",
+            "oneOf": [
+              {
+                "properties": {
+                  "status": {
+                    "const": "in_progress"
+                  },
+                  "conclusion": {
+                    "type": "null"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "completed"
+                  },
+                  "conclusion": {
+                    "const": "success"
+                  }
+                }
+              }
+            ]
+          },
+          "subject_run": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "completed"
+              },
+              "conclusion": {
+                "const": "success"
+              }
+            }
+          },
+          "gates": {
+            "properties": {
+              "deterministic": {
+                "const": "passed"
+              },
+              "security": {
+                "const": "passed"
+              },
+              "coverage": {
+                "const": "passed"
+              }
+            }
+          },
+          "labels": {
+            "properties": {
+              "ci-final": {
+                "const": "applied"
+              },
+              "ai-review-ready": {
+                "const": "applied"
+              }
+            }
+          },
+          "providers": {
+            "properties": {
+              "coderabbit": {
+                "const": "passed"
+              },
+              "codex": {
+                "const": "passed"
+              }
+            }
+          },
+          "dependabot": {
+            "properties": {
+              "eligible": {
+                "const": false
+              },
+              "proof": {
+                "const": "not-applicable"
+              }
+            }
+          },
+          "blockers": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "complete"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "complete": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "dependabot": {
+            "properties": {
+              "eligible": {
+                "const": true
+              }
+            },
+            "required": [
+              "eligible"
+            ]
+          }
+        },
+        "required": [
+          "dependabot"
+        ]
+      },
+      "then": {
+        "properties": {
+          "complete": {
+            "const": false
+          },
+          "dependabot": {
+            "properties": {
+              "proof": {
+                "const": "disabled"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "koios-ci-finalizer-state-v1"
+    },
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "repository_id",
+        "pull_request",
+        "head_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "head_sha": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "base_sha": {
+      "$ref": "#/$defs/sha"
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "created",
+        "blocked",
+        "deterministic-blocked",
+        "awaiting-providers",
+        "dry-run",
+        "complete"
+      ]
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "workflow": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "path",
+            "sha",
+            "event",
+            "source_path",
+            "promoter"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml$"
+            },
+            "sha": {
+              "$ref": "#/$defs/sha"
+            },
+            "event": {
+              "const": "workflow_dispatch"
+            },
+            "source_path": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^koios-ai/ci-platform/\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml@[0-9a-f]{40}$"
+            },
+            "promoter": {
+              "$ref": "#/$defs/actor"
+            }
+          }
+        }
+      ]
+    },
+    "controller_run": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "attempt",
+            "workflow_id",
+            "path",
+            "sha",
+            "ref",
+            "status",
+            "conclusion"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "attempt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "workflow_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 520,
+              "pattern": "^(?!.*(?:\\.\\.|//))\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml@(refs/heads/)?[A-Za-z0-9._/-]+$"
+            },
+            "sha": {
+              "$ref": "#/$defs/sha"
+            },
+            "ref": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^(?!.*(?:\\.\\.|//))refs/heads/[A-Za-z0-9._/-]+$"
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "conclusion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 64
+            }
+          }
+        }
+      ]
+    },
+    "subject_run": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "attempt",
+            "workflow_id",
+            "path",
+            "sha",
+            "status",
+            "conclusion"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "attempt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "workflow_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 520,
+              "pattern": "^(?!.*(?:\\.\\.|//))\\.github/workflows/[A-Za-z0-9_.-]+\\.ya?ml@(refs/heads/)?[A-Za-z0-9._/-]+$"
+            },
+            "sha": {
+              "$ref": "#/$defs/sha"
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "conclusion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 64
+            }
+          }
+        }
+      ]
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deterministic",
+        "security",
+        "coverage"
+      ],
+      "properties": {
+        "deterministic": {
+          "$ref": "#/$defs/gate_state"
+        },
+        "security": {
+          "$ref": "#/$defs/gate_state"
+        },
+        "coverage": {
+          "$ref": "#/$defs/gate_state"
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ci-final",
+        "ai-review-ready"
+      ],
+      "properties": {
+        "ci-final": {
+          "$ref": "#/$defs/label_state"
+        },
+        "ai-review-ready": {
+          "$ref": "#/$defs/label_state"
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coderabbit",
+        "codex"
+      ],
+      "properties": {
+        "coderabbit": {
+          "$ref": "#/$defs/provider_state"
+        },
+        "codex": {
+          "$ref": "#/$defs/provider_state"
+        }
+      }
+    },
+    "dependabot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eligible",
+        "proof"
+      ],
+      "properties": {
+        "eligible": {
+          "type": "boolean"
+        },
+        "proof": {
+          "type": "string",
+          "enum": [
+            "not-applicable",
+            "disabled"
+          ]
+        }
+      }
+    },
+    "rerun_requests": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "run_id",
+          "attempt"
+        ],
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "detail"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "updated_at": {
+      "type": "string",
+      "maxLength": 64,
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login",
+        "id",
+        "type"
+      ],
+      "properties": {
+        "login": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Bot",
+            "User"
+          ]
+        }
+      }
+    },
+    "gate_state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "passed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "label_state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "planned",
+        "applied"
+      ]
+    },
+    "provider_state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "blocked",
+        "passed"
+      ]
+    }
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/koios-ai/ci-platform/blob/main/contract/test-policy-v1.schema.json",
+  "title": "Koios CI Platform consumer test policy v1",
+  "description": "Closed, declarative pytest and coverage selectors. Commands and arbitrary arguments are forbidden.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "test_roots",
+    "marker_exclusions",
+    "registered_markers",
+    "protected_support_files",
+    "disabled_plugins",
+    "coverage_sources",
+    "critical_tests",
+    "unexpected_skip_policy"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "test_roots": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/repositoryPath"
+      }
+    },
+    "marker_exclusions": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "slow",
+          "external",
+          "resource_heavy",
+          "gpu",
+          "requires_network",
+          "requires_credentials"
+        ]
+      }
+    },
+    "disabled_plugins": {
+      "type": "array",
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "const": "benchmark"
+      }
+    },
+    "registered_markers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "slow",
+          "external",
+          "resource_heavy",
+          "gpu",
+          "requires_network",
+          "requires_credentials",
+          "unit",
+          "integration",
+          "leakage",
+          "critical",
+          "smoke",
+          "cli",
+          "cli_subprocess",
+          "cli_quick"
+        ]
+      }
+    },
+    "coverage_sources": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/repositoryPath"
+      }
+    },
+    "protected_support_files": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/repositoryPath"
+          },
+          {
+            "pattern": "\\.py$"
+          }
+        ]
+      }
+    },
+    "critical_tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leakage",
+        "lineage",
+        "schema",
+        "parity",
+        "model"
+      ],
+      "properties": {
+        "leakage": {
+          "$ref": "#/$defs/testManifest"
+        },
+        "lineage": {
+          "$ref": "#/$defs/testManifest"
+        },
+        "schema": {
+          "$ref": "#/$defs/testManifest"
+        },
+        "parity": {
+          "$ref": "#/$defs/testManifest"
+        },
+        "model": {
+          "$ref": "#/$defs/testManifest"
+        }
+      }
+    },
+    "unexpected_skip_policy": {
+      "const": "fail"
+    }
+  },
+  "$defs": {
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"
+    },
+    "testManifest": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/repositoryPath"
+          },
+          {
+            "pattern": "\\.py$"
+          }
+        ]
+      }
+    }
+  }
+}

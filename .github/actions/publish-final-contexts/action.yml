@@ -1,0 +1,56 @@
+name: Publish one exact final context
+description: Revalidate trusted runtime and PR provenance before publishing one context.
+inputs:
+  pull_request_number:
+    description: Pull request number from the pull_request_target event.
+    required: true
+  expected_head_sha:
+    description: API-confirmed PR head SHA from final preflight.
+    required: true
+  evidence_digest:
+    description: Verified final-evidence digest; required for success.
+    required: true
+  upstream_result:
+    description: Result of the immutable reusable final job.
+    required: true
+  gate_passed:
+    description: Context-specific output of the immutable reusable final job.
+    required: true
+  coverage_upload_result:
+    description: Coverage upload result, or not-applicable for security.
+    required: true
+outputs:
+  published:
+    description: True only after the exact check is written and read back.
+    value: ${{ steps.publish.outputs.published }}
+  conclusion:
+    description: Published success, failure, or cancelled conclusion.
+    value: ${{ steps.publish.outputs.conclusion }}
+runs:
+  using: composite
+  steps:
+    - name: Revalidate and publish one final context
+      id: publish
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        INPUT_EVIDENCE_DIGEST: ${{ inputs.evidence_digest }}
+        INPUT_UPSTREAM_RESULT: ${{ inputs.upstream_result }}
+        INPUT_GATE_PASSED: ${{ inputs.gate_passed }}
+        INPUT_COVERAGE_UPLOAD_RESULT: ${{ inputs.coverage_upload_result }}
+        RUNTIME_API_URL: ${{ github.api_url }}
+        RUNTIME_SERVER_URL: ${{ github.server_url }}
+        RUNTIME_EVENT_NAME: ${{ github.event_name }}
+        RUNTIME_JOB_ID: ${{ github.job }}
+        RUNTIME_JOB_CHECK_RUN_ID: ${{ job.check_run_id }}
+        RUNTIME_RUN_ID: ${{ github.run_id }}
+        RUNTIME_RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNTIME_REPOSITORY_ID: ${{ github.repository_id }}
+        RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}
+        RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+      run: python "$GITHUB_ACTION_PATH/publish_final_contexts.py"

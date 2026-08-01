@@ -1,0 +1,35 @@
+name: Invalidate final-review labels
+description: Remove SHA-specific final labels after a pull-request head changes.
+inputs:
+  pull_request_number:
+    description: Pull request number from the pull_request_target event.
+    required: true
+  event_head_sha:
+    description: New head SHA from the synchronize event.
+    required: true
+  lifecycle_event:
+    description: Exact pull_request_target lifecycle action that requires invalidation.
+    required: true
+  trusted_source_sha:
+    description: Exact protected-base checkout SHA for local platform-canary execution.
+    required: false
+    default: ""
+outputs:
+  changed:
+    description: True when at least one final label was removed.
+    value: ${{ steps.invalidate.outputs.changed }}
+runs:
+  using: composite
+  steps:
+    - name: Remove stale final labels
+      id: invalidate
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        INPUT_EVENT_HEAD_SHA: ${{ inputs.event_head_sha }}
+        INPUT_LIFECYCLE_EVENT: ${{ inputs.lifecycle_event }}
+        INPUT_TRUSTED_SOURCE_SHA: ${{ inputs.trusted_source_sha }}
+        WORKFLOW_SOURCE_SHA: ${{ github.sha }}
+      run: python "$GITHUB_ACTION_PATH/invalidate_final_labels.py"

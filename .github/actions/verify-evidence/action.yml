@@ -1,0 +1,24 @@
+name: Verify immutable final evidence
+description: Verify the downloaded final bundle before a no-checkout OIDC upload.
+inputs:
+  expected_head_sha:
+    description: API-confirmed PR head SHA.
+    required: true
+  expected_evidence_digest:
+    description: Manifest digest returned by the reusable final workflow.
+    required: true
+outputs:
+  verified:
+    description: True only after every available evidence component is verified.
+    value: ${{ steps.verify.outputs.verified }}
+runs:
+  using: composite
+  steps:
+    - name: Verify final evidence bytes and provenance
+      id: verify
+      shell: bash
+      env:
+        INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        INPUT_EXPECTED_EVIDENCE_DIGEST: ${{ inputs.expected_evidence_digest }}
+        EXPECTED_PLATFORM_SHA: ${{ github.action_ref }}
+      run: python "$GITHUB_ACTION_PATH/verify_evidence.py"

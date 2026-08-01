@@ -1,0 +1,99 @@
+name: CodeRabbit final review gate
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: >-
+    coderabbit-final-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{
+    github.event.label.name == 'ai-review-ready' && 'candidate' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate-coderabbit:
+    name: Evaluate CodeRabbit provider evidence
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ai-review-ready' &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      evidence_digest: ${{ steps.evaluate.outputs.evidence_digest }}
+    env:
+      CI_PLATFORM_ROLE: ai-evaluator
+      GH_TOKEN: ${{ github.token }}
+      PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      EVALUATOR_SOURCE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out trusted evaluator source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: consumer-controller
+      - name: Evaluate current-head CodeRabbit delivery
+        id: evaluate
+        working-directory: consumer-controller
+        env:
+          EVIDENCE_PATH: ${{ runner.temp }}/ci-platform-ai-evidence/provider-evidence.json
+        run: >-
+          python .github/ci/evaluate_ai_provider.py
+          --provider coderabbit
+          --timeout-seconds 900
+          --poll-seconds 30
+          --output "$EVIDENCE_PATH"
+      - name: Upload bounded provider evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coderabbit-evidence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/ci-platform-ai-evidence/provider-evidence.json
+          if-no-files-found: error
+          retention-days: 3
+
+  publish-coderabbit:
+    name: Publish exact CodeRabbit context
+    needs: [evaluate-coderabbit]
+    if: >-
+      always() &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ai-review-ready' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      checks: write
+      contents: read
+      pull-requests: read
+    env:
+      CI_PLATFORM_ROLE: ai-context-publisher
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download provider evidence
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coderabbit-evidence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/ci-platform-ai-evidence
+      - name: Publish CodeRabbit result
+        uses: koios-ai/ci-platform/.github/actions/publish-ai-context@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          expected_head_sha: ${{ github.event.pull_request.head.sha }}
+          evaluation_result: ${{ needs.evaluate-coderabbit.result }}
+          expected_evidence_digest: ${{ needs.evaluate-coderabbit.outputs.evidence_digest }}

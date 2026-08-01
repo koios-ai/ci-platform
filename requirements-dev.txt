@@ -1,0 +1,11 @@
+pytest==9.1.1
+pytest-cov==7.0.0
+pytest-xdist==3.8.0
+PyYAML==6.0.3
+ruff==0.14.14
+mypy==1.19.1
+jsonschema==4.26.0
+types-jsonschema==4.26.0.20260518
+types-PyYAML==6.0.12.20260724
+bandit==1.9.4
+pip-audit==2.10.0

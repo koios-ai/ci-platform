@@ -1,0 +1,31 @@
+name: Invalidate SHA-bound final labels
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [synchronize, reopened, converted_to_draft]
+
+permissions: {}
+
+concurrency:
+  group: invalidate-final-${{ github.repository_id }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  invalidate-final-labels:
+    name: Remove stale final labels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: read
+    env:
+      CI_PLATFORM_ROLE: label-controller
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Remove labels from the exact new head
+        uses: koios-ai/ci-platform/.github/actions/invalidate-final-labels@__CI_PLATFORM_FULL_SHA__
+        with:
+          pull_request_number: ${{ github.event.pull_request.number }}
+          event_head_sha: ${{ github.event.pull_request.head.sha }}
+          lifecycle_event: ${{ github.event.action }}

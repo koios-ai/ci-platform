@@ -1,0 +1,813 @@
+name: LEGACY / inactive reusable final evidence
+
+# Retained only for pre-v1 forensic compatibility. It is not a v1 ruleset
+# candidate or supported consumer entry point.
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: Closed execution profile.
+        required: true
+        type: string
+      head_sha:
+        description: Exact pull-request head approved by the trusted preflight.
+        required: true
+        type: string
+      base_sha:
+        description: Exact trusted base commit approved by the preflight.
+        required: true
+        type: string
+      changed_files_digest:
+        description: SHA-256 of the canonical changed-file list.
+        required: true
+        type: string
+      python_version:
+        description: Supported Python runtime.
+        required: false
+        type: string
+        default: "3.12"
+      artifact_retention_days:
+        description: Evidence retention, limited to one through seven days.
+        required: false
+        type: number
+        default: 3
+    outputs:
+      head_sha:
+        description: Validated head commit.
+        value: ${{ jobs.validate-contract.outputs.head_sha }}
+      profile:
+        description: Validated execution profile.
+        value: ${{ jobs.validate-contract.outputs.profile }}
+      deterministic_passed:
+        description: Whether all deterministic final gates passed.
+        value: ${{ jobs.deterministic.outputs.passed }}
+      coverage_passed:
+        description: Whether coverage evidence passed closed-floor validation.
+        value: ${{ jobs.coverage-evidence.outputs.passed }}
+      security_passed:
+        description: Whether the independent security lane passed.
+        value: ${{ jobs.security.outputs.passed }}
+      evidence_digest:
+        description: SHA-256 of the complete evidence manifest.
+        value: ${{ jobs.deterministic.outputs.evidence_digest }}
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ci-platform-final-${{ inputs.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  validate-contract:
+    name: Platform / validate immutable contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      head_sha: ${{ steps.validate.outputs.head_sha }}
+      profile: ${{ steps.validate.outputs.profile }}
+      platform_sha: ${{ steps.validate.outputs.platform_sha }}
+    env:
+      PROFILE: ${{ inputs.profile }}
+      HEAD_SHA: ${{ inputs.head_sha }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      CHANGED_FILES_DIGEST: ${{ inputs.changed_files_digest }}
+      PYTHON_VERSION: ${{ inputs.python_version }}
+      RETENTION_DAYS: ${{ inputs.artifact_retention_days }}
+      PLATFORM_SHA: ${{ job.workflow_sha }}
+      PLATFORM_REPOSITORY: ${{ job.workflow_repository }}
+      PLATFORM_WORKFLOW_REF: ${{ job.workflow_ref }}
+      PLATFORM_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+    steps:
+      - name: Validate contract inputs and platform provenance
+        id: validate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          profiles = {"baseline", "python", "node", "powershell", "critical-ml"}
+          if os.environ["PROFILE"] not in profiles:
+              raise SystemExit("unsupported profile")
+          for name in ("HEAD_SHA", "BASE_SHA", "PLATFORM_SHA"):
+              if not re.fullmatch(r"[0-9a-f]{40}", os.environ[name]):
+                  raise SystemExit(f"invalid full commit SHA: {name}")
+          if os.environ["HEAD_SHA"] == os.environ["BASE_SHA"]:
+              raise SystemExit("head and base commits must differ")
+          if not re.fullmatch(
+              r"[0-9a-f]{64}", os.environ["CHANGED_FILES_DIGEST"]
+          ):
+              raise SystemExit("invalid changed-files digest")
+          if os.environ["PYTHON_VERSION"] not in {"3.11", "3.12", "3.13"}:
+              raise SystemExit("unsupported Python version")
+          if os.environ["PLATFORM_REPOSITORY"] != "koios-ai/ci-platform":
+              raise SystemExit("reusable workflow did not execute from koios-ai/ci-platform")
+          if (
+              os.environ["PLATFORM_WORKFLOW_FILE_PATH"]
+              != ".github/workflows/reusable-final.yml"
+              or os.environ["PLATFORM_WORKFLOW_REF"]
+              != (
+                  "koios-ai/ci-platform/.github/workflows/"
+                  "reusable-final.yml@"
+                  + os.environ["PLATFORM_SHA"]
+              )
+          ):
+              raise SystemExit("reusable workflow path/ref is not immutable")
+          retention = int(os.environ["RETENTION_DAYS"])
+          if not 1 <= retention <= 7:
+              raise SystemExit("artifact retention must be between 1 and 7 days")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"head_sha={os.environ['HEAD_SHA']}\n")
+              output.write(f"profile={os.environ['PROFILE']}\n")
+              output.write(f"platform_sha={os.environ['PLATFORM_SHA']}\n")
+          PY
+
+  security:
+    name: Platform / security evidence
+    needs: validate-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      passed: ${{ steps.result.outputs.passed }}
+      evidence_digest: ${{ steps.evidence.outputs.evidence_digest }}
+    env:
+      PROFILE: ${{ needs.validate-contract.outputs.profile }}
+      HEAD_SHA: ${{ needs.validate-contract.outputs.head_sha }}
+      PLATFORM_SHA: ${{ needs.validate-contract.outputs.platform_sha }}
+      PYTHON_VERSION: ${{ inputs.python_version }}
+    steps:
+      - name: Check out exact head for security analysis
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+          ref: ${{ env.HEAD_SHA }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned security tools
+        shell: bash
+        working-directory: target
+        run: >-
+          python -m pip install --disable-pip-version-check
+          bandit==1.9.4 pip-audit==2.10.0 semgrep==1.168.0
+      - name: Materialize pinned high-confidence security rules
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+
+          rules = """\
+          rules:
+            - id: koios-hardcoded-provider-credential
+              message: High-confidence provider credential signature.
+              severity: ERROR
+              languages: [generic]
+              pattern-regex: '(AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,255}|sk-[A-Za-z0-9]{20,})'
+            - id: koios-python-disabled-tls-verification
+              message: TLS certificate verification must not be disabled.
+              severity: ERROR
+              languages: [python]
+              pattern-either:
+                - pattern: requests.$METHOD(..., verify=False, ...)
+                - pattern: httpx.$METHOD(..., verify=False, ...)
+          """
+          path = pathlib.Path(os.environ["RUNNER_TEMP"], "koios-semgrep.yml")
+          path.write_text(rules, encoding="utf-8")
+          PY
+      - name: Run fail-closed static security analysis
+        shell: bash
+        working-directory: target
+        run: >-
+          semgrep --error --metrics=off
+          --config "$RUNNER_TEMP/koios-semgrep.yml" .
+      - name: Run Bandit medium/high security gate
+        if: env.PROFILE != 'baseline'
+        shell: bash
+        working-directory: target
+        env:
+          PYTHONWARNINGS: default
+        run: |
+          python - <<'PY'
+          import pathlib
+          import subprocess
+
+          targets = [
+              f"./{path}"
+              for path in subprocess.check_output(
+                  ["git", "ls-files", "-z", "--", "*.py"]
+              )
+              .decode("utf-8")
+              .split("\0")
+              if path and pathlib.PurePosixPath(path).suffix == ".py"
+          ]
+          if not targets:
+              raise SystemExit("Python profile has no tracked Bandit target")
+          subprocess.run(
+              [
+                  "bandit",
+                  "-ll",
+                  "-f",
+                  "json",
+                  "-o",
+                  "bandit-report.json",
+                  *targets,
+              ],
+              check=True,
+          )
+          PY
+      - name: Audit resolved Python dependencies
+        if: env.PROFILE != 'baseline'
+        shell: bash
+        working-directory: target
+        run: |
+          if [[ -f tools/sync_ci_environment.py ]]; then
+            SKIP_PRECOMMIT_INSTALL=1 python tools/sync_ci_environment.py --ci
+          elif [[ -f requirements.txt && -f constraints.txt ]]; then
+            python -m pip install --disable-pip-version-check -r requirements.txt -c constraints.txt
+          elif [[ -f requirements.txt ]]; then
+            python -m pip install --disable-pip-version-check -r requirements.txt
+          elif [[ -f pyproject.toml ]]; then
+            python -m pip install --disable-pip-version-check .
+          else
+            echo "Python profile has no dependency manifest." >&2
+            exit 1
+          fi
+          python -m pip_audit --local --skip-editable
+      - name: Create security evidence
+        id: evidence
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          evidence = {
+              "head_sha": os.environ["HEAD_SHA"],
+              "platform_sha": os.environ["PLATFORM_SHA"],
+              "profile": os.environ["PROFILE"],
+              "dependency_audit": (
+                  "not-applicable" if os.environ["PROFILE"] == "baseline" else "passed"
+              ),
+              "bandit_medium_high": (
+                  "not-applicable" if os.environ["PROFILE"] == "baseline" else "passed"
+              ),
+              "semgrep_rules": "embedded-high-confidence-v1",
+              "status": "passed",
+          }
+          path = pathlib.Path("security-evidence.json")
+          path.write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"evidence_digest={digest}\n")
+          PY
+      - name: Upload bounded security evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: security-evidence-${{ env.HEAD_SHA }}
+          path: target/security-evidence.json
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Record security success
+        id: result
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  deterministic:
+    name: Platform / deterministic final evidence
+    needs:
+      - validate-contract
+      - security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      passed: ${{ steps.result.outputs.passed }}
+      evidence_digest: ${{ steps.manifest.outputs.evidence_digest }}
+    env:
+      PROFILE: ${{ needs.validate-contract.outputs.profile }}
+      HEAD_SHA: ${{ needs.validate-contract.outputs.head_sha }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      CHANGED_FILES_DIGEST: ${{ inputs.changed_files_digest }}
+      PLATFORM_SHA: ${{ needs.validate-contract.outputs.platform_sha }}
+      PYTHON_VERSION: ${{ inputs.python_version }}
+      SECURITY_EVIDENCE_DIGEST: ${{ needs.security.outputs.evidence_digest }}
+      EVIDENCE_DIR: ${{ runner.temp }}/ci-platform-evidence
+    steps:
+      - name: Check out exact head for deterministic analysis
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+          ref: ${{ env.HEAD_SHA }}
+      - name: Check out exact CI platform implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          path: platform
+          persist-credentials: false
+          ref: ${{ job.workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Verify canonical changed-file evidence
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          raw = subprocess.check_output(
+              [
+                  "git",
+                  "diff",
+                  "--name-only",
+                  "-z",
+                  "--diff-filter=ACMRD",
+                  f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}",
+              ]
+          )
+          files = sorted(
+              value.decode("utf-8", "surrogateescape")
+              for value in raw.split(b"\0")
+              if value
+          )
+          canonical = "".join(f"{value}\n" for value in files).encode("utf-8")
+          digest = hashlib.sha256(canonical).hexdigest()
+          if digest != os.environ["CHANGED_FILES_DIGEST"]:
+              raise SystemExit("changed-file digest does not match the checked-out commits")
+          evidence = pathlib.Path(os.environ["EVIDENCE_DIR"])
+          evidence.mkdir(parents=True)
+          evidence.joinpath("changed-files.json").write_text(
+              json.dumps(files, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Install fixed deterministic tooling
+        shell: bash
+        working-directory: target
+        run: >-
+          python -m pip install --disable-pip-version-check
+          diff-cover==10.3.0 mypy==1.19.1 PyYAML==6.0.3 pytest==9.0.2
+          pytest-cov==7.0.0 pytest-xdist==3.8.0 ruff==0.14.14
+      - name: Enforce protected-base CI policy non-regression
+        shell: bash
+        working-directory: target
+        run: >-
+          python ../platform/scripts/policy_non_regression.py
+          --base-sha "$BASE_SHA"
+          --output "$EVIDENCE_DIR/policy-non-regression-summary.json"
+      - name: Synchronize repository environment
+        if: env.PROFILE != 'baseline'
+        shell: bash
+        working-directory: target
+        run: |
+          if [[ -f tools/sync_ci_environment.py ]]; then
+            SKIP_PRECOMMIT_INSTALL=1 python tools/sync_ci_environment.py --ci
+          elif [[ -f requirements.txt && -f constraints.txt ]]; then
+            python -m pip install --disable-pip-version-check -r requirements.txt -c constraints.txt
+          elif [[ -f requirements.txt ]]; then
+            python -m pip install --disable-pip-version-check -r requirements.txt
+          elif [[ -f pyproject.toml ]]; then
+            python -m pip install --disable-pip-version-check .
+          else
+            echo "Python profile has no dependency manifest." >&2
+            exit 1
+          fi
+          python -m pip install --disable-pip-version-check \
+            diff-cover==10.3.0 mypy==1.19.1 PyYAML==6.0.3 pytest==9.0.2 \
+            pytest-cov==7.0.0 pytest-xdist==3.8.0 ruff==0.14.14
+      - name: Verify installed dependency environment
+        shell: bash
+        working-directory: target
+        run: |
+          python -m pip check
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          freeze = subprocess.check_output(
+              ["python", "-m", "pip", "freeze", "--all"], text=True
+          )
+          payload = {
+              "freeze_sha256": hashlib.sha256(freeze.encode()).hexdigest(),
+              "pip_check": "passed",
+              "profile": os.environ["PROFILE"],
+              "python": subprocess.check_output(
+                  ["python", "--version"], text=True, stderr=subprocess.STDOUT
+              ).strip(),
+          }
+          pathlib.Path(os.environ["EVIDENCE_DIR"], "environment-summary.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Run full typing and documentation gates
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          root = pathlib.Path(".")
+          python_files = sorted(
+              str(path)
+              for path in root.rglob("*.py")
+              if not any(
+                  part in {".git", ".venv", "venv", "build", "dist"}
+                  for part in path.parts
+              )
+          )
+          commands: list[list[str]] = []
+          if os.environ["PROFILE"] != "baseline" and python_files:
+              commands.extend(
+                  [
+                      [sys.executable, "-m", "ruff", "check", "."],
+                      [sys.executable, "-m", "ruff", "format", "--check", "."],
+                  ]
+              )
+              configured = (
+                  pathlib.Path("mypy.ini").is_file()
+                  or pathlib.Path(".mypy.ini").is_file()
+                  or (
+                      pathlib.Path("pyproject.toml").is_file()
+                      and "[tool.mypy]" in pathlib.Path("pyproject.toml").read_text(
+                          encoding="utf-8"
+                      )
+                  )
+              )
+              commands.append(
+                  [sys.executable, "-m", "mypy", "."]
+                  if configured
+                  else [
+                      sys.executable,
+                      "-m",
+                      "mypy",
+                      "--ignore-missing-imports",
+                      "--disable-error-code=import-untyped",
+                      *python_files,
+                  ]
+              )
+          for command in commands:
+              subprocess.run(command, check=True)
+
+          checked = {"json": 0, "markdown": 0, "toml": 0, "yaml": 0}
+          import tomllib
+          import yaml
+
+          for path in root.rglob("*"):
+              if not path.is_file() or ".git" in path.parts:
+                  continue
+              suffix = path.suffix.lower()
+              if suffix == ".json":
+                  json.loads(path.read_text(encoding="utf-8"))
+                  checked["json"] += 1
+              elif suffix in {".yaml", ".yml"}:
+                  yaml.safe_load(path.read_text(encoding="utf-8"))
+                  checked["yaml"] += 1
+              elif suffix == ".toml":
+                  tomllib.loads(path.read_text(encoding="utf-8"))
+                  checked["toml"] += 1
+              elif suffix in {".md", ".markdown"}:
+                  path.read_text(encoding="utf-8")
+                  checked["markdown"] += 1
+
+          pathlib.Path(os.environ["EVIDENCE_DIR"], "typing-summary.json").write_text(
+              json.dumps(
+                  {
+                      "commands": commands,
+                      "python_file_count": len(python_files),
+                      "status": "passed",
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          pathlib.Path(
+              os.environ["EVIDENCE_DIR"], "documentation-summary.json"
+          ).write_text(
+              json.dumps(
+                  {"checked_files": checked, "status": "passed"},
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Run import and CLI smoke gates
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          commands: list[list[str]] = []
+          compile_status = "not-applicable"
+          if os.environ["PROFILE"] != "baseline":
+              subprocess.run(
+                  [sys.executable, "-m", "compileall", "-q", "."], check=True
+              )
+              compile_status = "passed"
+              for candidate in ("tools/sync_ci_environment.py", "cli.py", "manage.py"):
+                  if pathlib.Path(candidate).is_file():
+                      command = [sys.executable, candidate, "--help"]
+                      subprocess.run(command, check=True, timeout=60)
+                      commands.append(command)
+                      break
+          pathlib.Path(os.environ["EVIDENCE_DIR"], "smoke-summary.json").write_text(
+              json.dumps(
+                  {
+                      "commands": commands,
+                      "compileall": compile_status,
+                      "status": "passed",
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Run repository-native pre-test policy hooks
+        shell: bash
+        working-directory: target
+        run: >-
+          python ../platform/scripts/run_repository_hooks.py
+          --phase pre-test
+          --profile "$PROFILE"
+          --base-sha "$BASE_SHA"
+          --output "$EVIDENCE_DIR/repository-pre-hooks-summary.json"
+      - name: Run protected-base test policy with coverage
+        shell: bash
+        working-directory: target
+        run: >-
+          python ../platform/scripts/run_test_policy.py
+          --base-sha "$BASE_SHA"
+          --profile "$PROFILE"
+          --evidence-dir "$EVIDENCE_DIR"
+          --coverage-xml coverage.xml
+          --coverage-json coverage.json
+      - name: Run repository-native post-coverage policy hooks
+        shell: bash
+        working-directory: target
+        run: >-
+          python ../platform/scripts/run_repository_hooks.py
+          --phase post-coverage
+          --profile "$PROFILE"
+          --base-sha "$BASE_SHA"
+          --coverage-xml coverage.xml
+          --output "$EVIDENCE_DIR/repository-post-hooks-summary.json"
+      - name: Enforce coverage floors
+        shell: bash
+        working-directory: target
+        run: >-
+          python ../platform/scripts/evaluate_coverage.py
+          --coverage-json coverage.json
+          --base-sha "$BASE_SHA"
+          --head-sha "$HEAD_SHA"
+          --profile "$PROFILE"
+          --output "$EVIDENCE_DIR/coverage-summary.json"
+      - name: Create complete evidence manifest
+        id: manifest
+        shell: bash
+        working-directory: target
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          evidence = pathlib.Path(os.environ["EVIDENCE_DIR"])
+          inputs = {
+              "coverage.xml": pathlib.Path("coverage.xml"),
+              "coverage.json": pathlib.Path("coverage.json"),
+              "changed-files.json": evidence / "changed-files.json",
+              "coverage-summary.json": evidence / "coverage-summary.json",
+              "typing-summary.json": evidence / "typing-summary.json",
+              "documentation-summary.json": evidence / "documentation-summary.json",
+              "environment-summary.json": evidence / "environment-summary.json",
+              "critical-safety-summary.json": evidence
+              / "critical-safety-summary.json",
+              "smoke-summary.json": evidence / "smoke-summary.json",
+              "test-policy-summary.json": evidence / "test-policy-summary.json",
+              "repository-pre-hooks-summary.json": evidence
+              / "repository-pre-hooks-summary.json",
+              "repository-post-hooks-summary.json": evidence
+              / "repository-post-hooks-summary.json",
+              "policy-non-regression-summary.json": evidence
+              / "policy-non-regression-summary.json",
+              "pytest-junit.xml": evidence / "pytest-junit.xml",
+          }
+          missing = [name for name, path in inputs.items() if not path.is_file()]
+          if missing:
+              raise SystemExit(f"missing final evidence: {missing}")
+          digests = {
+              name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for name, path in inputs.items()
+          }
+          policy_summary = json.loads(
+              inputs["policy-non-regression-summary.json"].read_text(
+                  encoding="utf-8"
+              )
+          )
+          quality_debt_digest = policy_summary[
+              "base_quality_debt_digest"
+          ]
+          manifest = {
+              "base_sha": os.environ["BASE_SHA"],
+              "changed_files_digest": os.environ["CHANGED_FILES_DIGEST"],
+              "changed_files_evidence_digest": digests["changed-files.json"],
+              "critical_safety_summary_digest": digests[
+                  "critical-safety-summary.json"
+              ],
+              "coverage_json_digest": digests["coverage.json"],
+              "coverage_sha256": digests["coverage.xml"],
+              "coverage_summary_digest": digests["coverage-summary.json"],
+              "documentation_summary_digest": digests["documentation-summary.json"],
+              "environment_summary_digest": digests["environment-summary.json"],
+              "head_sha": os.environ["HEAD_SHA"],
+              "platform_sha": os.environ["PLATFORM_SHA"],
+              "profile": os.environ["PROFILE"],
+              "quality_debt_digest": quality_debt_digest,
+              "security_evidence_digest": os.environ["SECURITY_EVIDENCE_DIGEST"],
+              "smoke_summary_digest": digests["smoke-summary.json"],
+              "test_policy_summary_digest": digests["test-policy-summary.json"],
+              "repository_pre_hooks_digest": digests[
+                  "repository-pre-hooks-summary.json"
+              ],
+              "repository_post_hooks_digest": digests[
+                  "repository-post-hooks-summary.json"
+              ],
+              "policy_non_regression_digest": digests[
+                  "policy-non-regression-summary.json"
+              ],
+              "pytest_junit_digest": digests["pytest-junit.xml"],
+              "typing_summary_digest": digests["typing-summary.json"],
+          }
+          path = evidence / "evidence-manifest.json"
+          path.write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"evidence_digest={digest}\n")
+          PY
+      - name: Stage final evidence package
+        shell: bash
+        working-directory: target
+        run: |
+          cp coverage.xml "$EVIDENCE_DIR/coverage.xml"
+          cp coverage.json "$EVIDENCE_DIR/coverage.json"
+      - name: Upload bounded final evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: final-evidence-${{ env.HEAD_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}
+      - name: Record deterministic success
+        id: result
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  coverage-evidence:
+    name: Platform / coverage evidence verification
+    needs:
+      - validate-contract
+      - security
+      - deterministic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      passed: ${{ steps.result.outputs.passed }}
+    env:
+      PROFILE: ${{ needs.validate-contract.outputs.profile }}
+      HEAD_SHA: ${{ needs.validate-contract.outputs.head_sha }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      CHANGED_FILES_DIGEST: ${{ inputs.changed_files_digest }}
+      PLATFORM_SHA: ${{ needs.validate-contract.outputs.platform_sha }}
+      EVIDENCE_DIGEST: ${{ needs.deterministic.outputs.evidence_digest }}
+      SECURITY_EVIDENCE_DIGEST: ${{ needs.security.outputs.evidence_digest }}
+    steps:
+      - name: Download same-run final evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: final-evidence-${{ env.HEAD_SHA }}
+          path: final-evidence
+      - name: Download same-run security evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: security-evidence-${{ env.HEAD_SHA }}
+          path: security-evidence
+      - name: Verify evidence manifest
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          root = pathlib.Path("final-evidence")
+          manifest_path = root / "evidence-manifest.json"
+          if hashlib.sha256(manifest_path.read_bytes()).hexdigest() != os.environ[
+              "EVIDENCE_DIGEST"
+          ]:
+              raise SystemExit("evidence manifest digest mismatch")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected = {
+              "base_sha": os.environ["BASE_SHA"],
+              "changed_files_digest": os.environ["CHANGED_FILES_DIGEST"],
+              "head_sha": os.environ["HEAD_SHA"],
+              "platform_sha": os.environ["PLATFORM_SHA"],
+              "profile": os.environ["PROFILE"],
+              "security_evidence_digest": os.environ["SECURITY_EVIDENCE_DIGEST"],
+          }
+          for key, value in expected.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"stale or malformed evidence field: {key}")
+          mapped = {
+              "coverage_sha256": root / "coverage.xml",
+              "changed_files_evidence_digest": root / "changed-files.json",
+              "coverage_json_digest": root / "coverage.json",
+              "coverage_summary_digest": root / "coverage-summary.json",
+              "typing_summary_digest": root / "typing-summary.json",
+              "documentation_summary_digest": root / "documentation-summary.json",
+              "environment_summary_digest": root / "environment-summary.json",
+              "critical_safety_summary_digest": root
+              / "critical-safety-summary.json",
+              "smoke_summary_digest": root / "smoke-summary.json",
+              "test_policy_summary_digest": root / "test-policy-summary.json",
+              "repository_pre_hooks_digest": root
+              / "repository-pre-hooks-summary.json",
+              "repository_post_hooks_digest": root
+              / "repository-post-hooks-summary.json",
+              "policy_non_regression_digest": root
+              / "policy-non-regression-summary.json",
+              "pytest_junit_digest": root / "pytest-junit.xml",
+          }
+          for field, path in mapped.items():
+              if hashlib.sha256(path.read_bytes()).hexdigest() != manifest.get(field):
+                  raise SystemExit(f"evidence component digest mismatch: {field}")
+          security_path = pathlib.Path(
+              "security-evidence/security-evidence.json"
+          )
+          if hashlib.sha256(security_path.read_bytes()).hexdigest() != manifest[
+              "security_evidence_digest"
+          ]:
+              raise SystemExit("security evidence digest mismatch")
+          security = json.loads(security_path.read_text(encoding="utf-8"))
+          if (
+              security.get("head_sha") != os.environ["HEAD_SHA"]
+              or security.get("platform_sha") != os.environ["PLATFORM_SHA"]
+              or security.get("status") != "passed"
+          ):
+              raise SystemExit("security evidence provenance mismatch")
+          PY
+      - name: Record coverage evidence success
+        id: result
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"

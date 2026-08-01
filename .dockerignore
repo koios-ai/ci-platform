@@ -1,0 +1,14 @@
+**
+!docker/
+!docker/ci-python-runtime.Dockerfile
+!requirements-dev.txt
+!contract/
+!contract/coverage-v1.ini
+!contract/mypy-v1.ini
+!contract/pytest-v1.ini
+!scripts/
+!scripts/run_module_isolated.py
+!scripts/run_platform_script.py
+!scripts/run_pytest_isolated.py
+!scripts/run_test_policy.py
+!scripts/test_policy.py

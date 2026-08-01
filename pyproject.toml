@@ -1,0 +1,22 @@
+[tool.pytest.ini_options]
+addopts = "-ra -p no:cacheprovider"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+warn_redundant_casts = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["tests/canaries/quality"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.format]
+line-ending = "lf"

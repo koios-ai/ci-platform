@@ -1,0 +1,49 @@
+name: Publish one exact AI final context
+description: Publish a provider result only from bounded consumer-local evidence.
+inputs:
+  pull_request_number:
+    description: Pull request number from the pull_request_target event.
+    required: true
+  expected_head_sha:
+    description: Current same-repository pull-request head SHA.
+    required: true
+  evaluation_result:
+    description: Result of the consumer-local metadata evaluator job.
+    required: true
+  expected_evidence_digest:
+    description: SHA-256 digest produced by the consumer-local evaluator.
+    required: false
+    default: ""
+outputs:
+  published:
+    description: True only after the exact check is written and read back.
+    value: ${{ steps.publish.outputs.published }}
+  conclusion:
+    description: Published success, failure, or cancelled conclusion.
+    value: ${{ steps.publish.outputs.conclusion }}
+runs:
+  using: composite
+  steps:
+    - name: Revalidate and publish one AI final context
+      id: publish
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        INPUT_EVALUATION_RESULT: ${{ inputs.evaluation_result }}
+        INPUT_EXPECTED_EVIDENCE_DIGEST: ${{ inputs.expected_evidence_digest }}
+        RUNTIME_API_URL: ${{ github.api_url }}
+        RUNTIME_SERVER_URL: ${{ github.server_url }}
+        RUNTIME_EVENT_NAME: ${{ github.event_name }}
+        RUNTIME_JOB_ID: ${{ github.job }}
+        RUNTIME_JOB_CHECK_RUN_ID: ${{ job.check_run_id }}
+        RUNTIME_RUN_ID: ${{ github.run_id }}
+        RUNTIME_RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNTIME_REPOSITORY_ID: ${{ github.repository_id }}
+        RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}
+        RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+      run: python "$GITHUB_ACTION_PATH/publish_ai_context.py"

@@ -1,0 +1,66 @@
+name: Koios CI / continuous validation
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+
+# This is the platform source repository's sole PR-capable internal gate. It
+# remains distinct from the consumer-owned `CI / required` context.
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    continuous-validation-${{ github.repository_id }}-${{ github.event_name }}-${{
+    github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validation:
+    name: Koios CI / source validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Install pinned validation dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
+      - name: Verify validation dependency integrity
+        shell: bash
+        run: python -m pip check
+      - name: Reject generated workflow drift
+        shell: bash
+        run: python scripts/generate_merge_gate_profiles.py --root . --check
+      - name: Validate immutable platform contract
+        shell: bash
+        run: python scripts/validate_ci_platform_v1.py --root . --structural-only
+      - name: Lint platform source
+        shell: bash
+        run: python -m ruff check . --no-cache
+      - name: Check platform formatting
+        shell: bash
+        run: python -m ruff format --check . --no-cache
+      - name: Type-check all platform scripts
+        shell: bash
+        run: python -m mypy scripts --ignore-missing-imports
+      - name: Test platform with plugins auto-loaded
+        shell: bash
+        run: python -B -m pytest tests -q -n 2 -k "not test_complete_platform_suite_runs_in_each_plugin_mode"
+      - name: Test platform with plugins disabled
+        shell: bash
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python -B -m pytest tests -q -p xdist.plugin -n 2 -k "not test_complete_platform_suite_runs_in_each_plugin_mode"

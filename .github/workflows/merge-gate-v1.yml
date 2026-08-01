@@ -1,0 +1,426 @@
+name: Koios CI / merge gate
+
+on:
+  pull_request:
+  merge_group:
+
+# This file is the baseline source workflow. Four deterministic generated
+# siblings bind the other profiles. Organization rulesets select exactly one
+# source path; workflows never read repository custom properties at runtime.
+permissions:
+  contents: read
+
+env:
+  CI_PLATFORM_PROFILE: baseline
+
+concurrency:
+  group: merge-gate-v1-baseline-${{ github.repository_id }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  fast-scope:
+    name: Koios CI / fast scope
+    if: github.repository != 'koios-ai/ci-platform'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      head_sha: ${{ steps.scope.outputs.head_sha }}
+      base_sha: ${{ steps.scope.outputs.base_sha }}
+      profile: ${{ steps.scope.outputs.profile }}
+      native: ${{ steps.scope.outputs.native }}
+      admitted: ${{ steps.scope.outputs.admitted }}
+      blocker: ${{ steps.scope.outputs.blocker }}
+      deterministic_status: ${{ steps.scope.outputs.deterministic_status }}
+      security_status: ${{ steps.scope.outputs.security_status }}
+      security_extension_status: ${{ steps.scope.outputs.security_extension_status }}
+      coverage_status: ${{ steps.scope.outputs.coverage_status }}
+      security_reason: ${{ steps.scope.outputs.security_reason }}
+      coverage_reason: ${{ steps.scope.outputs.coverage_reason }}
+      dependabot_scope_digest: ${{ steps.scope.outputs.dependabot_scope_digest }}
+    steps:
+      - name: Check out immutable platform policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact untrusted target for scope
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - id: scope
+        name: Evaluate authoritative merge policy
+        shell: bash
+        run: |
+          python platform/scripts/merge_gate_policy.py \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --workflow-repository '${{ job.workflow_repository }}' \
+            --workflow-sha '${{ job.workflow_sha }}' \
+            --workflow-ref '${{ job.workflow_ref }}' \
+            --workflow-file-path '${{ job.workflow_file_path }}' \
+            --default-profile "$CI_PLATFORM_PROFILE" \
+            --target-root target \
+            --github-output "$GITHUB_OUTPUT"
+
+  fast-deterministic:
+    name: Koios CI / fast deterministic
+    needs: fast-scope
+    if: github.repository != 'koios-ai/ci-platform' && needs.fast-scope.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable platform source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact untrusted target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.fast-scope.outputs.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Install pinned platform-only fast tools
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --requirement platform/requirements-dev.txt
+          python -m pip check
+      - name: Run bounded format lint and protected manifest validation
+        shell: bash
+        env:
+          CI_PROFILE: ${{ needs.fast-scope.outputs.profile }}
+          BASE_SHA: ${{ needs.fast-scope.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.fast-scope.outputs.head_sha }}
+        run: >-
+          python platform/scripts/profile_runner.py --execute
+          --profile "$CI_PROFILE" --lane deterministic
+          --root target --platform-root platform
+          --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+      - name: Scan all tracked bytes for secrets
+        shell: bash
+        run: >-
+          python platform/scripts/secret_scan.py
+          --root target
+          --config platform/contract/secret-scan-v1.json
+          --expected-config-sha256 19f447a775d4f15bf6a4f5be044d1a258166af06c3d253ca4a0b6122a740eb5c
+      - name: Fail closed pending protected affected-test supervisor canary
+        shell: bash
+        run: |
+          echo "Affected-test execution remains non-authoritative until candidate code cannot forge completion evidence." >&2
+          exit 1
+
+  final-candidate:
+    name: Koios CI / final candidate admission
+    needs: [fast-scope, fast-deterministic]
+    if: github.repository != 'koios-ai/ci-platform' && needs.fast-scope.result == 'success' && needs.fast-deterministic.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      admitted: ${{ needs.fast-scope.outputs.admitted }}
+      blocker: ${{ needs.fast-scope.outputs.blocker }}
+    steps:
+      - name: Enforce authoritative final-candidate admission
+        shell: bash
+        run: |
+          if [[ '${{ needs.fast-scope.outputs.admitted }}' != 'true' ]]; then
+            echo "Final candidate blocked: ${{ needs.fast-scope.outputs.blocker }}" >&2
+            exit 1
+          fi
+          echo "Exact-head final candidate admitted"
+
+  deterministic:
+    name: Koios CI / deterministic
+    needs: [fast-scope, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable platform source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact untrusted target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.fast-scope.outputs.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Install pinned platform runner dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check --requirement platform/requirements-dev.txt
+      - name: Run deterministic profile
+        shell: bash
+        env:
+          CI_PROFILE: ${{ needs.fast-scope.outputs.profile }}
+          BASE_SHA: ${{ needs.fast-scope.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.fast-scope.outputs.head_sha }}
+        run: >-
+          python platform/scripts/profile_runner.py --execute
+          --profile "$CI_PROFILE" --lane deterministic
+          --root target --platform-root platform
+          --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+          --evidence-dir "$RUNNER_TEMP/ci-platform-deterministic"
+
+  security:
+    name: Koios CI / security
+    needs: [fast-scope, deterministic, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true' && needs.deterministic.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable platform source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact untrusted target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.fast-scope.outputs.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Install pinned platform runner dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check --requirement platform/requirements-dev.txt
+      - name: Run required security profile
+        if: needs.fast-scope.outputs.security_status == 'required'
+        shell: bash
+        env:
+          CI_PROFILE: ${{ needs.fast-scope.outputs.profile }}
+        run: >-
+          python platform/scripts/profile_runner.py --execute
+          --profile "$CI_PROFILE" --lane security
+          --root target --platform-root platform
+      - name: Record explicit security not-applicable
+        if: needs.fast-scope.outputs.security_extension_status == 'not-applicable'
+        shell: bash
+        run: |
+          echo "profile_security_extension_status=not-applicable"
+          echo "common_secret_scan_status=required"
+          echo "reason=${{ needs.fast-scope.outputs.security_reason }}"
+
+  runtime-evidence:
+    name: Koios CI / isolated runtime evidence
+    needs: [fast-scope, deterministic, security, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true' && needs.deterministic.result == 'success' && needs.security.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable platform source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact untrusted target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.fast-scope.outputs.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Run target only inside constrained digest-pinned containers
+        shell: bash
+        env:
+          CI_PROFILE: ${{ needs.fast-scope.outputs.profile }}
+          BASE_SHA: ${{ needs.fast-scope.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.fast-scope.outputs.head_sha }}
+          PLATFORM_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python -I platform/scripts/run_isolated_runtime.py
+          --target target --platform platform
+          --evidence-dir "$RUNNER_TEMP/ci-platform-runtime-evidence"
+          --profile "$CI_PROFILE" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+          --platform-sha "$PLATFORM_SHA" --workflow-attempt "$WORKFLOW_ATTEMPT"
+      - name: Upload same-attempt bounded runtime evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.fast-scope.outputs.profile }}
+          path: ${{ runner.temp }}/ci-platform-runtime-evidence
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    name: Koios CI / coverage
+    needs: [fast-scope, runtime-evidence, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true' && needs.runtime-evidence.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out immutable platform source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: platform
+          persist-credentials: false
+      - name: Check out exact target for fresh verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.fast-scope.outputs.head_sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Download only this workflow attempt runtime artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.fast-scope.outputs.profile }}
+          path: runtime-evidence
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+      - name: Install pinned verifier-only dependencies
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --requirement platform/requirements-dev.txt
+          python -m pip check
+      - name: Verify bounded provenance and coverage in a fresh job
+        shell: bash
+        env:
+          CI_PROFILE: ${{ needs.fast-scope.outputs.profile }}
+          BASE_SHA: ${{ needs.fast-scope.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.fast-scope.outputs.head_sha }}
+          PLATFORM_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python -I platform/scripts/verify_runtime_evidence.py
+          --root target --evidence-dir runtime-evidence
+          --profile "$CI_PROFILE" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+          --platform-sha "$PLATFORM_SHA" --workflow-attempt "$WORKFLOW_ATTEMPT"
+          --coverage-output "$RUNNER_TEMP/ci-platform-coverage-summary.json"
+      - name: Fail closed pending unforgeable target-supervisor hosted canary
+        shell: bash
+        run: |
+          echo "Runtime bytes are diagnostic only until the target UID cannot forge test completion evidence." >&2
+          exit 1
+
+  coderabbit-evidence:
+    name: Koios CI / CodeRabbit evidence
+    needs: [fast-scope, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Fail closed pending exact-head hosted evidence integration
+        shell: bash
+        run: exit 1
+
+  codex-evidence:
+    name: Koios CI / Codex evidence
+    needs: [fast-scope, final-candidate]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Fail closed pending exact-head hosted evidence integration
+        shell: bash
+        run: exit 1
+
+  findings-resolved:
+    name: Koios CI / findings resolved
+    needs: [final-candidate, coderabbit-evidence, codex-evidence]
+    if: github.repository != 'koios-ai/ci-platform' && needs.final-candidate.result == 'success' && needs.final-candidate.outputs.admitted == 'true' && needs.coderabbit-evidence.result == 'success' && needs.codex-evidence.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Fail closed pending provider-native unresolved-finding evidence
+        shell: bash
+        run: exit 1
+
+  merge:
+    name: ${{ github.repository == 'koios-ai/ci-platform' && 'Koios CI / baseline consumer gate disabled' || 'CI / required' }}
+    needs:
+      - fast-scope
+      - final-candidate
+      - fast-deterministic
+      - deterministic
+      - security
+      - runtime-evidence
+      - coverage
+      - coderabbit-evidence
+      - codex-evidence
+      - findings-resolved
+    if: github.repository != 'koios-ai/ci-platform' && always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce one stable fail-closed admission result
+        shell: bash
+        run: |
+          test '${{ needs.fast-scope.result }}' = success
+          test '${{ needs.final-candidate.result }}' = success
+          test '${{ needs.final-candidate.outputs.admitted }}' = true
+          test '${{ needs.fast-deterministic.result }}' = success
+          test '${{ needs.deterministic.result }}' = success
+          test '${{ needs.security.result }}' = success
+          test '${{ needs.runtime-evidence.result }}' = success
+          test '${{ needs.coverage.result }}' = success
+          test '${{ needs.coderabbit-evidence.result }}' = success
+          test '${{ needs.codex-evidence.result }}' = success
+          test '${{ needs.findings-resolved.result }}' = success

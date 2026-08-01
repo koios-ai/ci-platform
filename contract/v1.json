@@ -1,0 +1,696 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/koios-ai/ci-platform/blob/main/contract/v1.json",
+  "title": "Koios CI Platform workflow contract v1",
+  "description": "Closed input boundary for the immutable reusable final CI core.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "head_sha",
+    "base_sha",
+    "changed_files_digest",
+    "python_version",
+    "artifact_retention_days"
+  ],
+  "properties": {
+    "profile": {
+      "type": "string",
+      "enum": [
+        "baseline",
+        "python",
+        "node",
+        "powershell",
+        "critical-ml"
+      ]
+    },
+    "head_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "base_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "changed_files_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "python_version": {
+      "type": "string",
+      "pattern": "^3\\.(?:11|12|13)$",
+      "default": "3.12"
+    },
+    "artifact_retention_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 7,
+      "default": 3
+    }
+  },
+  "x-outputs": {
+    "head_sha": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "deterministic_passed": {
+      "type": "boolean"
+    },
+    "coverage_passed": {
+      "type": "boolean"
+    },
+    "security_passed": {
+      "type": "boolean"
+    },
+    "evidence_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "x-consumer-test-policy": {
+    "path": ".github/ci-platform-test-policy.json",
+    "schema": "contract/test-policy-v1.schema.json",
+    "source": "exact-protected-base-commit",
+    "commands_permitted": false,
+    "unexpected_skip_policy": "fail",
+    "critical_categories": [
+      "leakage",
+      "lineage",
+      "model",
+      "parity",
+      "schema"
+    ],
+    "coverage_floor_source": "quality_debt.yml"
+  },
+  "x-fast-test-lane": {
+    "policy_source": "exact-protected-base-commit",
+    "selection": [
+      "changed-declared-tests",
+      "direct-static-import-consumers",
+      "basename-matches",
+      "explicit-critical-manifest"
+    ],
+    "maximum_selected_tests": 128,
+    "dependency_setup": "protected-base-established-fixed-strategy",
+    "full_tree_fallback": false,
+    "unexpected_skip_policy": "fail",
+    "job_timeout_minutes": 20
+  },
+  "x-coverage-exclusion-policy": {
+    "changed_excluded_executable_line": "fail",
+    "coverage_json_excluded_lines_required": true,
+    "non_statement_changed_lines": "not-in-denominator",
+    "waiver_source": "none"
+  },
+  "x-required-context-spoofing-policy": {
+    "untrusted_job_level_reusable_workflows": "forbidden",
+    "reason": "Called workflow job names can synthesize GitHub Actions required-context names.",
+    "checks_api_writers": "exact-closed-publisher-tuples-only"
+  },
+  "x-platform-delivery": {
+    "current_required_and_final_workflow_dependency": "cross-repository-checkout",
+    "distribution": "sanitized-public-prerelease",
+    "public_repository_authorized": true,
+    "public_prerelease_publication_permitted": true,
+    "hosted_canary_use_only": true,
+    "consumer_pin_permitted": false,
+    "ruleset_activation_permitted": false,
+    "source_history_publication_permitted": false,
+    "publication_history": "sanitized-root-snapshot-only",
+    "prerelease_manifest": "contract/public-prerelease-v1.json",
+    "pat_permitted": false
+  },
+  "x-platform-release-policy": {
+    "current_head_only": true,
+    "staged_rollout_supported": false,
+    "arbitrary_historical_sha_permitted": false,
+    "public_prerelease_manifest": "contract/public-prerelease-v1.json",
+    "public_prerelease_support": "hosted-canaries-only",
+    "required_resolution": "protected-supported-release-manifest-with-closed-template-digests"
+  },
+  "x-required-contexts": [
+    "CI / required",
+    "Security / required",
+    "Coverage / required",
+    "AI / CodeRabbit final",
+    "AI / Codex final",
+    "AI / findings resolved"
+  ],
+  "x-protected-default-branch": "main",
+  "x-context-owners": {
+    "CI / required": {
+      "publisher": "organization-required-workflow-terminal",
+      "profile_workflows": {
+        "baseline": ".github/workflows/merge-gate-v1.yml",
+        "python": ".github/workflows/merge-gate-python-v1.yml",
+        "node": ".github/workflows/merge-gate-node-v1.yml",
+        "powershell": ".github/workflows/merge-gate-powershell-v1.yml",
+        "critical-ml": ".github/workflows/merge-gate-critical-ml-v1.yml"
+      },
+      "job": "merge",
+      "required_job": "CI / required",
+      "target": "event-head",
+      "trusted_metadata_only": false
+    },
+    "Security / required": {
+      "publisher": "checks-api",
+      "controller": ".github/workflows/final-required.yml:publish-security",
+      "evidence_source": ".github/workflows/reusable-final.yml",
+      "native_provider_evidence": {
+        "provider": "DeepSource",
+        "activation": "trusted-base-.deepsource.toml",
+        "target": "exact-pull-request-head",
+        "required_configured_dependency_contexts": true,
+        "retained_signal_policy": "defense-in-depth-until-central-parity-proven",
+        "retained_sca_signals": [
+          "reachability",
+          "dynamic-risk",
+          "epss",
+          "cvss",
+          "license-compliance"
+        ],
+        "ai_review_desired_state": "disabled",
+        "ai_review_disabled_readback_required": true,
+        "ai_review_context_permitted": false,
+        "observed_ai_review_context_policy": "fail-closed-hosted-drift",
+        "ignore_disabled_test_coverage": true,
+        "fail_on_no_data_required": true,
+        "checked_in_configuration_required": true,
+        "local_wrapper_removal_gate": "hosted-exact-head-canary"
+      },
+      "target": "pull-request-head",
+      "trusted_metadata_only": true
+    },
+    "Coverage / required": {
+      "publisher": "checks-api",
+      "controller": ".github/workflows/final-required.yml:publish-coverage",
+      "evidence_source": ".github/workflows/reusable-final.yml",
+      "target": "pull-request-head",
+      "trusted_metadata_only": true
+    },
+    "AI / CodeRabbit final": {
+      "publisher": "checks-api",
+      "controller": ".github/workflows/coderabbit-final.yml:publish-coderabbit",
+      "evidence_source": ".github/ci/evaluate_ai_provider.py",
+      "target": "pull-request-head",
+      "trusted_metadata_only": true
+    },
+    "AI / Codex final": {
+      "publisher": "checks-api",
+      "controller": ".github/workflows/codex-final-gate.yml:publish-codex",
+      "evidence_source": ".github/ci/evaluate_ai_provider.py",
+      "target": "pull-request-head",
+      "trusted_metadata_only": true
+    },
+    "AI / findings resolved": {
+      "publisher": "checks-api",
+      "controller": ".github/workflows/ai-findings-resolved.yml:publish-findings",
+      "evidence_source": ".github/ci/evaluate_ai_provider.py",
+      "target": "pull-request-head",
+      "trusted_metadata_only": true
+    }
+  },
+  "x-consumer-final-topology": {
+    "event": "pull_request_target:labeled",
+    "label": "ci-final",
+    "jobs": {
+      "final-preflight": {
+        "role": "final-preflight",
+        "executes_pull_request_code": false,
+        "permissions": {
+          "actions": "read",
+          "checks": "read",
+          "contents": "read",
+          "pull-requests": "read"
+        }
+      },
+      "platform-final": {
+        "role": "immutable-reusable-evidence",
+        "needs": [
+          "final-preflight"
+        ],
+        "permissions": {
+          "actions": "read",
+          "contents": "read"
+        }
+      },
+      "coverage-upload": {
+        "role": "coverage-uploader",
+        "needs": [
+          "final-preflight",
+          "platform-final"
+        ],
+        "executes_pull_request_code": false,
+        "permissions": {
+          "actions": "read",
+          "contents": "read",
+          "id-token": "write"
+        }
+      },
+      "publish-security": {
+        "role": "security-context-publisher",
+        "needs": [
+          "final-preflight",
+          "platform-final"
+        ],
+        "executes_pull_request_code": false,
+        "permissions": {
+          "actions": "read",
+          "checks": "write",
+          "contents": "read",
+          "pull-requests": "read",
+          "statuses": "read"
+        }
+      },
+      "publish-coverage": {
+        "role": "final-context-publisher",
+        "needs": [
+          "final-preflight",
+          "platform-final",
+          "coverage-upload"
+        ],
+        "executes_pull_request_code": false,
+        "permissions": {
+          "actions": "read",
+          "checks": "write",
+          "contents": "read",
+          "pull-requests": "read"
+        }
+      },
+      "promote-ai-review": {
+        "role": "ai-review-promoter",
+        "needs": [
+          "final-preflight",
+          "publish-security",
+          "publish-coverage"
+        ],
+        "executes_pull_request_code": false,
+        "permissions": {
+          "actions": "read",
+          "checks": "read",
+          "contents": "read",
+          "issues": "write",
+          "pull-requests": "read"
+        }
+      }
+    }
+  },
+  "x-ai-review-cadence": {
+    "final_success_promoter": ".github/workflows/final-required.yml:promote-ai-review",
+    "source_label": "ci-final",
+    "review_label": "ai-review-ready",
+    "promotion_requires": [
+      "Security / required",
+      "Coverage / required"
+    ],
+    "provider_controllers": [
+      ".github/workflows/coderabbit-final.yml",
+      ".github/workflows/codex-final-gate.yml",
+      ".github/workflows/ai-findings-resolved.yml"
+    ],
+    "promotion_target": "exact-pull-request-head",
+    "provider_native_evidence": {
+      "coderabbit": "exact-head-review-plus-App-delivery-plus-App-check",
+      "codex": "exact-head-review-plus-App-delivery-hosted-canary-disabled-by-default",
+      "provider_and_head_bound": true,
+      "complete_review_thread_readback": true,
+      "unresolved_threads": 0,
+      "failure_markers": 0,
+      "synthetic_pass_envelope_permitted": false,
+      "hosted_canary_required": true
+    },
+    "superseded_attempts_rejected": true,
+    "candidate_concurrency_group": "ci-final-only",
+    "noncandidate_label_runs_isolated": true,
+    "github_token_label_event_triggers_workflows": false,
+    "current_provider_controller_dispatch": "nonfunctional",
+    "label_is_orchestration_authority": false,
+    "current_label_trigger_provenance": "untrusted",
+    "required_resolution": [
+      "same-trusted-final-workflow-downstream-jobs",
+      "exact-head-revalidated-workflow-dispatch-or-repository-dispatch"
+    ]
+  },
+  "x-consumer-ai-publishers": {
+    ".github/workflows/coderabbit-final.yml": {
+      "job": "publish-coderabbit",
+      "context": "AI / CodeRabbit final",
+      "provider_review_login": "coderabbitai[bot]",
+      "delivery_app": {
+        "id": 347564,
+        "slug": "coderabbitai"
+      }
+    },
+    ".github/workflows/codex-final-gate.yml": {
+      "job": "publish-codex",
+      "context": "AI / Codex final",
+      "provider_review_login": "chatgpt-codex-connector[bot]",
+      "delivery_app": {
+        "id": 1144995,
+        "slug": "chatgpt-codex-connector"
+      }
+    },
+    ".github/workflows/ai-findings-resolved.yml": {
+      "job": "publish-findings",
+      "context": "AI / findings resolved"
+    }
+  },
+  "x-coderabbit-policy": {
+    "path": ".coderabbit.yaml",
+    "source": "exact-platform-template",
+    "profile": "assertive",
+    "label_opt_in": "ai-review-ready",
+    "review_cadence": "final-only-label-opt-in",
+    "automatic_review": false,
+    "incremental_review": false,
+    "draft_review": false,
+    "autofix": false,
+    "write_capable_finishing_touches": false,
+    "usage_based_add_on": "disabled",
+    "recurring_credit_purchases": false,
+    "automatic_credit_top_up": false,
+    "rate_limit_exhaustion": "fail-closed-wait-no-provider-pass",
+    "organization_override_readback_required": true
+  },
+  "x-codex-policy": {
+    "review_cadence": "exact-head-final-only",
+    "provider_pass_requires_exact_head": true,
+    "purchased_credits_enabled": false,
+    "automatic_credit_reload": false,
+    "usage_overage_permitted": false,
+    "quota_exhaustion": "fail-closed-wait-no-provider-pass",
+    "hosted_readback_required": true
+  },
+  "x-deepsource-policy": {
+    "subscription": "team-fixed-30-usd-per-month-per-contributor",
+    "deterministic_analysis_enabled": true,
+    "sca_enabled": true,
+    "fail_on_no_data_enabled": true,
+    "checked_in_deepsource_toml_enabled": true,
+    "master_ai_agents_enabled": false,
+    "automatic_ai_credit_recharge_enabled": false,
+    "ai_features_required_disabled": [
+      "ai-review",
+      "ai-autofix",
+      "enhanced-secrets-ai",
+      "pr-report-card-ai"
+    ],
+    "ai_review_context_permitted": false,
+    "hosted_feature_readback_required": true,
+    "observed_on": "2026-07-27"
+  },
+  "x-github-code-quality-policy": {
+    "state": "disabled",
+    "policy": "permanent-exclusion",
+    "observed_control": "Enable Code Quality",
+    "context_present": false,
+    "configuration_present": false,
+    "canary_present": false,
+    "organization_repository_access_required": "no-repositories",
+    "organization_repository_access_enforcement_required": true,
+    "organization_repository_access_receipt": null,
+    "billing_cessation_receipt": null,
+    "reactivation_permitted": false,
+    "replacement": "contract/deterministic-quality-v1.json",
+    "observed_on": "2026-07-27"
+  },
+  "x-platform-toolchain-integrity": {
+    "control_plane_python": "3.12.13",
+    "requirements_file": "requirements-dev.txt",
+    "requirements_state": "exact-versions-without-hashes",
+    "immutable_supply_chain_proven": false,
+    "required_resolution": [
+      "hash-locked-requirements-with-require-hashes",
+      "digest-pinned-prebuilt-control-plane-image"
+    ]
+  },
+  "x-dependabot-policy": {
+    "current_state": "blocked-no-secret-finalization",
+    "paid_ai_exemption_active": false,
+    "future_exemption_binding_required": {
+      "pull_request_actor": "dependabot[bot]-exact-app-identity",
+      "event_sender": "dependabot[bot]-exact-app-identity",
+      "event_name": "pull_request",
+      "repository": "same-repository-id-and-full-name",
+      "pull_request_number": "exact-current-pull-request",
+      "head_sha": "exact-current-head",
+      "base_sha": "exact-current-base",
+      "changed_paths": "dependency-only-full-copy-rename-delete-proof"
+    },
+    "synthetic_provider_pass_permitted": false
+  },
+  "x-sha-invalidation-controller": {
+    "implementation_status": "implemented-hosted-unverified",
+    "design_template": "templates/consumer/.github/workflows/invalidate-final-labels.yml",
+    "planned_consumer_path": ".github/workflows/invalidate-final-labels.yml",
+    "platform_canary_workflow": ".github/workflows/invalidate-final-labels.yml",
+    "required_source": "trusted-default-branch",
+    "hosted_readback_required": true,
+    "events": [
+      "pull_request_target:synchronize",
+      "pull_request_target:reopened",
+      "pull_request_target:converted_to_draft"
+    ],
+    "labels": [
+      "ai-review-ready",
+      "ci-final"
+    ],
+    "labels_only": true,
+    "required_check_contexts_invalidated": false,
+    "same_sha_lifecycle_transitions_blocked_until_external_enforcement": [
+      "closed-to-reopened",
+      "draft-to-ready"
+    ]
+  },
+  "x-exact-head-finalizer": {
+    "implementation_status": "local-complete-hosted-unverified",
+    "subject_template": "templates/consumer/.github/workflows/final-subject-v1.yml",
+    "controller_template": "templates/consumer/.github/workflows/finalize-python-v1.yml",
+    "resume_template": "templates/consumer/.github/workflows/resume-finalizer-v1.yml",
+    "dispatch_action": ".github/actions/dispatch-finalizer",
+    "subject_run_name": "koios-final-subject-v1",
+    "controller_run_name": "koios-finalizer-v1",
+    "source_attestation_schema": "koios-run-source-v3",
+    "source_commit_binding": "controller-and-subject-head-sha-equal-pr-base-sha",
+    "complete_review_thread_pagination": true,
+    "complete_same_head_attempt_inventory": true,
+    "gate_job_names": {
+      "deterministic": "Platform / deterministic final evidence",
+      "security": "Platform / security evidence",
+      "coverage": "Platform / coverage evidence verification"
+    },
+    "github_caller_job_prefix_permitted": true,
+    "cross_run_singleflight": "github-actions-concurrency-repository-pr-head",
+    "cancel_in_progress": false,
+    "broad_rerun_endpoint_permitted": false,
+    "resume_mode": "automatic-workflow-run-completed-bound-to-exact-subject-run-and-attempt",
+    "hosted_readback_flags_default_false": true,
+    "codex_hosted_canary_default": "disabled",
+    "codex_native_result": "exact-current-review-body-PASS",
+    "cutover_permitted": false
+  },
+  "x-merge-gate-v1": {
+    "profile_workflows": {
+      "baseline": ".github/workflows/merge-gate-v1.yml",
+      "python": ".github/workflows/merge-gate-python-v1.yml",
+      "node": ".github/workflows/merge-gate-node-v1.yml",
+      "powershell": ".github/workflows/merge-gate-powershell-v1.yml",
+      "critical-ml": ".github/workflows/merge-gate-critical-ml-v1.yml"
+    },
+    "profiles": [
+      "baseline",
+      "python",
+      "node",
+      "powershell",
+      "critical-ml"
+    ],
+    "profile_selection": {
+      "authority": "separate-organization-rulesets",
+      "target_filter_template": "props.ci_profile:<profile>",
+      "assignment_authority": "explicit-user-specified-only",
+      "runtime_custom_property_input": false,
+      "one_active_required_workflow_per_repository": true,
+      "hosted_readback_required": true
+    },
+    "source_repository_policy": {
+      "repository": "koios-ai/ci-platform",
+      "profile_workflow_jobs": "disabled",
+      "consumer_required_context": "CI / required",
+      "source_disabled_contexts": {
+        "baseline": "Koios CI / baseline consumer gate disabled",
+        "python": "Koios CI / python consumer gate disabled",
+        "node": "Koios CI / node consumer gate disabled",
+        "powershell": "Koios CI / powershell consumer gate disabled",
+        "critical-ml": "Koios CI / critical-ml consumer gate disabled"
+      },
+      "internal_workflow": ".github/workflows/continuous-validation.yml",
+      "internal_job": "Koios CI / source validation",
+      "internal_triggers": [
+        "pull_request",
+        "merge_group",
+        "push-main",
+        "schedule"
+      ]
+    },
+    "profile_property": {
+      "name": "ci_profile",
+      "owner": "organization",
+      "type": "single_select",
+      "required": true,
+      "assignment_mode": "explicit-user-specified",
+      "default_value": null,
+      "inheritance_permitted": false,
+      "empty_value_permitted": false,
+      "allowed_values": [
+        "baseline",
+        "python",
+        "node",
+        "powershell",
+        "critical-ml"
+      ],
+      "repository_actor_updates": false
+    },
+    "profile_rulesets": [
+      {
+        "name": "Koios CI / baseline merge gate",
+        "branch_target": "~DEFAULT_BRANCH",
+        "target_filter": "props.ci_profile:baseline",
+        "required_workflow": ".github/workflows/merge-gate-v1.yml",
+        "required_job": "CI / required"
+      },
+      {
+        "name": "Koios CI / python merge gate",
+        "branch_target": "~DEFAULT_BRANCH",
+        "target_filter": "props.ci_profile:python",
+        "required_workflow": ".github/workflows/merge-gate-python-v1.yml",
+        "required_job": "CI / required"
+      },
+      {
+        "name": "Koios CI / node merge gate",
+        "branch_target": "~DEFAULT_BRANCH",
+        "target_filter": "props.ci_profile:node",
+        "required_workflow": ".github/workflows/merge-gate-node-v1.yml",
+        "required_job": "CI / required"
+      },
+      {
+        "name": "Koios CI / powershell merge gate",
+        "branch_target": "~DEFAULT_BRANCH",
+        "target_filter": "props.ci_profile:powershell",
+        "required_workflow": ".github/workflows/merge-gate-powershell-v1.yml",
+        "required_job": "CI / required"
+      },
+      {
+        "name": "Koios CI / critical-ml merge gate",
+        "branch_target": "~DEFAULT_BRANCH",
+        "target_filter": "props.ci_profile:critical-ml",
+        "required_workflow": ".github/workflows/merge-gate-critical-ml-v1.yml",
+        "required_job": "CI / required"
+      }
+    ],
+    "terminal_job": {
+      "id": "merge",
+      "name": "CI / required"
+    },
+    "common_security": {
+      "status": "required-all-profiles",
+      "tool": "scripts/secret_scan.py",
+      "tool_version": "1.0.0",
+      "config": "contract/secret-scan-v1.json",
+      "config_sha256": "19f447a775d4f15bf6a4f5be044d1a258166af06c3d253ca4a0b6122a740eb5c",
+      "positive_canary": "tests/canaries/secrets/pass.txt",
+      "negative_canary_parts": [
+        "tests/canaries/secrets/token-prefix.txt",
+        "tests/canaries/secrets/token-suffix.txt"
+      ],
+      "negative_exit": 2,
+      "target_scope": "git-tracked-files",
+      "target_code_execution": false
+    },
+    "policy_model": "scripts/merge_gate_policy.py",
+    "profile_runner": "scripts/profile_runner.py --execute --lane <lane>",
+    "legacy_v1_candidates": [],
+    "local_validation_authority": "structural-only-non-authoritative",
+    "release_status": "NOT READY",
+    "release_blockers": [
+      "profile-ruleset-hosted-readback",
+      "draft-to-ready-hosted-rerun-canary",
+      "merge-group-ai-mapping-canary",
+      "provider-native-exact-head-canaries",
+      "deepsource-retain-or-replace-dispositions-and-ai-review-disabled-readback",
+      "untrusted-runtime-evidence-hosted-canary",
+      "runtime-output-bounded-supervisor-hosted-canary",
+      "protected-affected-test-supervisor-canary",
+      "mypy-adoption-ratchet-hosted-canary",
+      "first-critical-consumer-test-policy-v1-migration",
+      "first-critical-consumer-python-manifest-v1-migration",
+      "coderabbit-cost-controls-hosted-readback",
+      "codex-cost-controls-hosted-readback",
+      "deepsource-ai-cost-controls-hosted-readback",
+      "trusted-same-run-source-attestation-adapter-wiring",
+      "complete-graphql-equivalent-review-thread-resolution-readback",
+      "immutable-workflow-promoter-identities",
+      "exact-label-invalidation-same-sha-lifecycle-controller",
+      "complete-same-pr-head-run-inventory-no-newer-failure",
+      "github-native-transactional-single-flight-across-hosted-runners",
+      "github-code-quality-org-no-repositories-enforced-readback",
+      "github-code-quality-billing-cessation-readback",
+      "node-corepack-manager-artifact-digests",
+      "powershell-pester-artifact-digest",
+      "hash-locked-platform-toolchain-or-digest-pinned-image"
+    ]
+  },
+  "x-rollout-guards": {
+    "merge_queue": {
+      "initially_enabled": false,
+      "required_context_count": 6,
+      "synthetic_sha_binding_required": true,
+      "pr_head_success_relabeling_permitted": false,
+      "activation_gate": "hosted-fail-closed-mapping-canary"
+    },
+    "branch_freshness": {
+      "strict_up_to_date_required": true,
+      "reason": "Context-only rules cannot see the base SHA bound inside old PR-head evidence.",
+      "until": "all-required-contexts-bind-merge-group-sha"
+    }
+  },
+  "x-rollout-status": {
+    "cutover_permitted": false,
+    "disposition": "NOT READY",
+    "blocking_requirements": [
+      {
+        "id": "same-head-latest-attempt-enforcement",
+        "requirement": "A source-bound ruleset workflow or dedicated external publisher App must prove that newer cancelled or zero-job startup_failure attempts and close-to-reopen or draft-to-ready transitions invalidate older successful manual contexts on the same SHA."
+      },
+      {
+        "id": "untrusted-execution-isolation",
+        "requirement": "Every PR-controlled dependency, hook, and test process must end in an untrusted execution job; authoritative evidence must be reconstructed and semantically verified in fresh jobs from a rechecked immutable platform checkout and isolated interpreter."
+      },
+      {
+        "id": "dependabot-admission",
+        "requirement": "A closed actor, commit, and changed-path-bound Dependabot admission path must satisfy the stable required-context contract without invoking paid AI reviews or inventing provider passes."
+      },
+      {
+        "id": "protected-main-and-scheduled-validation",
+        "requirement": "Protected-main push and scheduled heavy-validation callers must produce independently verified deterministic, security, and coverage evidence without PR labels."
+      },
+      {
+        "id": "same-repository-branch-actions-boundary",
+        "requirement": "Before consumer rollout, repository and organization policy must ensure a newly pushed same-repository branch workflow cannot receive secrets, OIDC, environments, or a write-capable token before the default-branch required workflow can reject it."
+      },
+      {
+        "id": "provider-native-evidence-canaries",
+        "requirement": "CodeRabbit must prove exact-head review, App delivery, successful App check, and complete resolved-thread behavior; Codex remains disabled until a hosted canary proves its exact native review and App delivery shapes, and then only an exact current native review body of PASS followed by App delivery can pass. Synthetic PASS envelopes are forbidden."
+      },
+      {
+        "id": "supported-release-manifest",
+        "requirement": "Promote the canary-only public pre-release attestation into a protected, bounded release manifest that authenticates each allowed full platform SHA and its exact consumer-template digests so critical, hobby, and professional consumers can upgrade sequentially without accepting arbitrary history or breaking older supported pins."
+      },
+      {
+        "id": "github-token-ai-cadence-dispatch",
+        "requirement": "Install and host-verify the immutable final-subject/finalizer dispatch topology before retiring the three legacy pull_request_target:labeled evaluator triggers. Labels written by GITHUB_TOKEN remain notification-only and must never be treated as orchestration authority."
+      }
+    ]
+  }
+}

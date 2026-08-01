@@ -1,0 +1,16 @@
+{
+  "schema": "koios-ci/public-prerelease-v1",
+  "repository": "koios-ai/ci-platform",
+  "visibility": "public",
+  "support_level": "hosted-canaries-only",
+  "publication_authorized": true,
+  "authoritative_gates": false,
+  "cutover_permitted": false,
+  "consumer_pin_permitted": false,
+  "ruleset_activation_permitted": false,
+  "merge_freeze_release_permitted": false,
+  "history_publication": "sanitized-root-snapshot-only",
+  "attestation_scope": "all-publication-files-except-this-manifest",
+  "artifact_count": 128,
+  "artifact_tree_sha256": "cee800bb4a896726a40d00285fcbc78aee598ede3d5b130de7378009d675972c"
+}

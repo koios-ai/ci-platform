@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "github_code_quality": {
+    "enabled": false,
+    "policy": "permanent-exclusion",
+    "contexts": [],
+    "workflows": [],
+    "extensions": [],
+    "configurations": [],
+    "canaries": [],
+    "organization_repository_access_required": "no-repositories",
+    "organization_repository_access_enforcement_required": true,
+    "reactivation_permitted": false
+  },
+  "classes": {
+    "wrong-arguments": {"owner": {"tool": "strict-mypy", "package": "mypy", "command": "python -m mypy --config-file contract/mypy-v1.ini", "config": "contract/mypy-v1.ini", "rule": "call-arg", "version": "1.19.1"}, "positive_canary": "tests/canaries/quality/wrong_arguments_positive.py", "negative_canary": "tests/canaries/quality/wrong_arguments.py"},
+    "multiple-definition": {"owner": {"tool": "ruff", "package": "ruff", "command": "python -m ruff check --config contract/ruff-v1.toml", "config": "contract/ruff-v1.toml", "rule": "F811", "version": "0.14.14"}, "positive_canary": "tests/canaries/quality/multiple_definition_positive.py", "negative_canary": "tests/canaries/quality/multiple_definition.py"},
+    "identical-expression-comparison": {"owner": {"tool": "ruff", "package": "ruff", "command": "python -m ruff check --config contract/ruff-v1.toml", "config": "contract/ruff-v1.toml", "rule": "PLR0124", "version": "0.14.14"}, "positive_canary": "tests/canaries/quality/identical_expression_comparison_positive.py", "negative_canary": "tests/canaries/quality/identical_expression_comparison.py"},
+    "undefined-export": {"owner": {"tool": "ruff", "package": "ruff", "command": "python -m ruff check --config contract/ruff-v1.toml", "config": "contract/ruff-v1.toml", "rule": "F822", "version": "0.14.14"}, "positive_canary": "tests/canaries/quality/undefined_export_positive.py", "negative_canary": "tests/canaries/quality/undefined_export.py"},
+    "unreachable-statements": {"owner": {"tool": "strict-mypy", "package": "mypy", "command": "python -m mypy --config-file contract/mypy-v1.ini", "config": "contract/mypy-v1.ini", "rule": "unreachable", "version": "1.19.1"}, "positive_canary": "tests/canaries/quality/unreachable_statements_positive.py", "negative_canary": "tests/canaries/quality/unreachable_statements.py"},
+    "calls-to-non-callables": {"owner": {"tool": "strict-mypy", "package": "mypy", "command": "python -m mypy --config-file contract/mypy-v1.ini", "config": "contract/mypy-v1.ini", "rule": "operator", "version": "1.19.1"}, "positive_canary": "tests/canaries/quality/calls_to_non_callables_positive.py", "negative_canary": "tests/canaries/quality/calls_to_non_callables.py"},
+    "exit-quit": {"owner": {"tool": "ruff", "package": "ruff", "command": "python -m ruff check --config contract/ruff-v1.toml", "config": "contract/ruff-v1.toml", "rule": "PLR1722", "version": "0.14.14"}, "positive_canary": "tests/canaries/quality/exit_quit_positive.py", "negative_canary": "tests/canaries/quality/exit_quit.py"},
+    "conflicting-attributes": {"owner": {"tool": "strict-mypy", "package": "mypy", "command": "python -m mypy --config-file contract/mypy-v1.ini", "config": "contract/mypy-v1.ini", "rule": "assignment", "version": "1.19.1"}, "positive_canary": "tests/canaries/quality/conflicting_attributes_positive.py", "negative_canary": "tests/canaries/quality/conflicting_attributes.py"},
+    "implicit-list-string-concatenation": {"owner": {"tool": "ruff", "package": "ruff", "command": "python -m ruff check --config contract/ruff-v1.toml", "config": "contract/ruff-v1.toml", "rule": "ISC004", "version": "0.14.14"}, "positive_canary": "tests/canaries/quality/implicit_list_string_concatenation_positive.py", "negative_canary": "tests/canaries/quality/implicit_list_string_concatenation.py"}
+  }
+}

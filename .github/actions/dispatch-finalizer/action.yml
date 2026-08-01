@@ -1,0 +1,41 @@
+name: Dispatch exact-attempt finalizer
+description: Dispatch a new immutable controller identity for one successful subject attempt.
+inputs:
+  subject_run_id:
+    description: Current successful subject workflow run ID.
+    required: true
+  subject_run_attempt:
+    description: Current successful subject workflow attempt.
+    required: true
+  subject_workflow_id:
+    description: Numeric workflow ID of the subject workflow.
+    required: true
+  subject_workflow_path:
+    description: Protected default-branch subject workflow path.
+    required: true
+  finalizer_workflow_path:
+    description: Protected default-branch finalizer workflow path.
+    required: true
+  default_branch:
+    description: Protected default branch.
+    required: true
+outputs:
+  controller_run_id:
+    description: Newly observed controller workflow run ID.
+    value: ${{ steps.dispatch.outputs.controller_run_id }}
+runs:
+  using: composite
+  steps:
+    - name: Dispatch and prove the new controller run
+      id: dispatch
+      shell: bash
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+        INPUT_SUBJECT_RUN_ID: ${{ inputs.subject_run_id }}
+        INPUT_SUBJECT_RUN_ATTEMPT: ${{ inputs.subject_run_attempt }}
+        INPUT_SUBJECT_WORKFLOW_ID: ${{ inputs.subject_workflow_id }}
+        INPUT_SUBJECT_WORKFLOW_PATH: ${{ inputs.subject_workflow_path }}
+        INPUT_FINALIZER_WORKFLOW_PATH: ${{ inputs.finalizer_workflow_path }}
+        INPUT_DEFAULT_BRANCH: ${{ inputs.default_branch }}
+      run: python "$GITHUB_ACTION_PATH/dispatch_finalizer.py"

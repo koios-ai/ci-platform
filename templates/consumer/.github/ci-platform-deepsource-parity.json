@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "template_status": "blocked",
+  "source_config_sha": null,
+  "hosted_inventory_artifact": null,
+  "hosted_inventory_observed_at": null,
+  "profiles": ["baseline", "python", "node", "powershell", "critical-ml"],
+  "signals": [
+    {"id": "python-static-quality", "parity_status": "gap", "outcome": "blocked", "gaps": ["hosted Python rule inventory, severity, and quality threshold unavailable"]},
+    {"id": "ruff-transformer", "parity_status": "gap", "outcome": "blocked", "gaps": ["pinned transformer/version/config evidence unavailable"]},
+    {"id": "sca", "parity_status": "gap", "outcome": "blocked", "gaps": ["manifest/profile resolved graphs and SBOMs unavailable"]},
+    {"id": "secrets", "parity_status": "gap", "outcome": "blocked", "gaps": ["hosted secrets scope and failing secret canary unavailable"]},
+    {"id": "docker-compose-config", "parity_status": "gap", "outcome": "blocked", "gaps": ["Docker, Compose, and config scanner parity unavailable"]},
+    {"id": "adapter-integrity", "parity_status": "gap", "outcome": "blocked", "gaps": ["exact DeepSource App identity, closed check inventory, and signed adapter canaries unavailable"]},
+    {"id": "ai-review-readback", "parity_status": "gap", "outcome": "disable-usage-based-ai", "gaps": ["provider enabled/disabled application readback unavailable"]},
+    {"id": "coverage", "parity_status": "gap", "outcome": "blocked", "gaps": ["hosted coverage not-applicable readback unavailable"]}
+  ],
+  "disposition_preconditions": {"all_signals_proven": false, "live_ruleset_safe": null, "app_subscription_readbacks": null}
+}

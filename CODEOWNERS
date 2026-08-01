@@ -1,0 +1,6 @@
+* @koios-ai/ci-platform-maintainers
+/.github/workflows/ @koios-ai/ci-platform-maintainers
+/.github/actions/ @koios-ai/ci-platform-maintainers
+/contract/ @koios-ai/ci-platform-maintainers
+/scripts/ @koios-ai/ci-platform-maintainers
+/templates/ @koios-ai/ci-platform-maintainers

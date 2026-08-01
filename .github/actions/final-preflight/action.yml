@@ -1,0 +1,49 @@
+name: Trusted final-candidate preflight
+description: Revalidate a current same-repository PR and derive immutable final inputs.
+inputs:
+  pull_request_number:
+    description: Pull request number from the pull_request_target event.
+    required: true
+  event_head_sha:
+    description: Head SHA copied directly from the pull_request_target payload.
+    required: true
+  event_base_sha:
+    description: Base SHA copied directly from the pull_request_target payload.
+    required: true
+  required_fast_context:
+    description: Exact fast-gate context to verify.
+    required: true
+  required_fast_workflow_id:
+    description: Numeric workflow ID from the trusted CI_REQUIRED_WORKFLOW_ID variable.
+    required: true
+outputs:
+  ready:
+    description: True only after all current-head preconditions pass.
+    value: ${{ steps.preflight.outputs.ready }}
+  profile:
+    description: Derived closed execution profile.
+    value: ${{ steps.preflight.outputs.profile }}
+  head_sha:
+    description: API-confirmed current PR head.
+    value: ${{ steps.preflight.outputs.head_sha }}
+  base_sha:
+    description: API-confirmed current PR base.
+    value: ${{ steps.preflight.outputs.base_sha }}
+  changed_files_digest:
+    description: SHA-256 of the canonical API-derived changed-file list.
+    value: ${{ steps.preflight.outputs.changed_files_digest }}
+runs:
+  using: composite
+  steps:
+    - name: Revalidate current final candidate
+      id: preflight
+      shell: bash
+      env:
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        INPUT_EVENT_HEAD_SHA: ${{ inputs.event_head_sha }}
+        INPUT_EVENT_BASE_SHA: ${{ inputs.event_base_sha }}
+        INPUT_REQUIRED_FAST_CONTEXT: ${{ inputs.required_fast_context }}
+        INPUT_REQUIRED_FAST_WORKFLOW_ID: ${{ inputs.required_fast_workflow_id }}
+        TRUSTED_ACTION_REF: ${{ github.action_ref }}
+        TRUSTED_ACTION_REPOSITORY: ${{ github.action_repository }}
+      run: python "$GITHUB_ACTION_PATH/preflight.py"
