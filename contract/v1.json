@@ -515,15 +515,11 @@
     },
     "source_repository_policy": {
       "repository": "koios-ai/ci-platform",
-      "profile_workflow_jobs": "disabled",
+      "profile_workflow_jobs": "source-guarded",
       "consumer_required_context": "CI / required",
-      "source_disabled_contexts": {
-        "baseline": "Koios CI / baseline consumer gate disabled",
-        "python": "Koios CI / python consumer gate disabled",
-        "node": "Koios CI / node consumer gate disabled",
-        "powershell": "Koios CI / powershell consumer gate disabled",
-        "critical-ml": "Koios CI / critical-ml consumer gate disabled"
-      },
+      "hosted_profile_workflow_state": "disabled-in-source-repository",
+      "hosted_disable_readback_required": true,
+      "ruleset_concurrency_cancel_in_progress": false,
       "internal_workflow": ".github/workflows/continuous-validation.yml",
       "internal_job": "Koios CI / source validation",
       "internal_triggers": [
@@ -613,6 +609,7 @@
     "local_validation_authority": "structural-only-non-authoritative",
     "release_status": "NOT READY",
     "release_blockers": [
+      "platform-source-profile-workflows-disabled-readback",
       "profile-ruleset-hosted-readback",
       "draft-to-ready-hosted-rerun-canary",
       "merge-group-ai-mapping-canary",

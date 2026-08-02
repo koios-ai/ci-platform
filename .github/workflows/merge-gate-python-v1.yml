@@ -1,4 +1,4 @@
-name: Koios CI / merge gate
+name: Koios CI / merge gate / python
 
 on:
   pull_request:
@@ -15,7 +15,6 @@ env:
 
 concurrency:
   group: merge-gate-v1-python-${{ github.repository_id }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha }}
-  cancel-in-progress: true
 
 jobs:
   fast-scope:
@@ -392,7 +391,7 @@ jobs:
         run: exit 1
 
   merge:
-    name: ${{ github.repository == 'koios-ai/ci-platform' && 'Koios CI / python consumer gate disabled' || 'CI / required' }}
+    name: CI / required
     needs:
       - fast-scope
       - final-candidate

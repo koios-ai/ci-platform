@@ -19,8 +19,8 @@ from typing import Any, cast
 import jsonschema
 import yaml
 from generate_merge_gate_profiles import (
+    PROFILE_WORKFLOW_NAMES,
     PROFILE_WORKFLOWS,
-    SOURCE_DISABLED_CONTEXTS,
     SOURCE_JOB_GUARD,
     SOURCE_REPOSITORY,
     generated_workflows,
@@ -74,13 +74,6 @@ PUBLICATION_GIT_REGULAR_MODES = {"100644", "100755"}
 PUBLICATION_REPARSE_FLAG = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 PUBLICATION_EMAIL = re.compile(r"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PUBLICATION_ALLOWED_NON_PERSONAL_ADDRESSES = {"git@github.com", "user@github.com"}
-
-
-def consumer_terminal_job_name(profile: str) -> str:
-    return (
-        f"${{{{ github.repository == '{SOURCE_REPOSITORY}' "
-        f"&& '{SOURCE_DISABLED_CONTEXTS[profile]}' || 'CI / required' }}}}"
-    )
 
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -648,9 +641,11 @@ def validate_profile_contract(root: Path, *, as_of: dt.datetime | None = None) -
     }
     expected_source_repository_policy = {
         "repository": SOURCE_REPOSITORY,
-        "profile_workflow_jobs": "disabled",
+        "profile_workflow_jobs": "source-guarded",
         "consumer_required_context": "CI / required",
-        "source_disabled_contexts": SOURCE_DISABLED_CONTEXTS,
+        "hosted_profile_workflow_state": "disabled-in-source-repository",
+        "hosted_disable_readback_required": True,
+        "ruleset_concurrency_cancel_in_progress": False,
         "internal_workflow": ".github/workflows/continuous-validation.yml",
         "internal_job": "Koios CI / source validation",
         "internal_triggers": ["pull_request", "merge_group", "push-main", "schedule"],
@@ -913,6 +908,7 @@ def validate_profile_contract(root: Path, *, as_of: dt.datetime | None = None) -
     else:
         raise ValueError("GitHub Code Quality receipts are incomplete")
     required_blockers = {
+        "platform-source-profile-workflows-disabled-readback",
         "profile-ruleset-hosted-readback",
         "untrusted-runtime-evidence-hosted-canary",
         "runtime-output-bounded-supervisor-hosted-canary",
@@ -956,8 +952,8 @@ def validate_workflow(root: Path) -> None:
         path = root / ".github" / "workflows" / filename
         workflow = load_yaml(path)
         events = workflow.get("on")
-        if workflow.get("name") != "Koios CI / merge gate":
-            raise ValueError("merge gate has an unstable workflow name")
+        if workflow.get("name") != PROFILE_WORKFLOW_NAMES[profile]:
+            raise ValueError("merge gate has an unstable profile-qualified workflow name")
         if events != {"pull_request": None, "merge_group": None}:
             raise ValueError("source-bound merge gate must use only unfiltered pull_request and merge_group")
         if workflow.get("permissions") != {"contents": "read"}:
@@ -966,6 +962,8 @@ def validate_workflow(root: Path) -> None:
             raise ValueError("merge gate profile does not match its immutable source path")
         if f"merge-gate-v1-{profile}-" not in str(workflow.get("concurrency", {}).get("group", "")):
             raise ValueError("merge gate concurrency is not profile-scoped")
+        if "cancel-in-progress" in workflow.get("concurrency", {}):
+            raise ValueError("ruleset workflow must not configure cancel-in-progress")
         jobs = workflow.get("jobs")
         if not isinstance(jobs, dict) or set(jobs) != REQUIRED_JOBS:
             raise ValueError("merge gate job topology is not closed")
@@ -1100,10 +1098,7 @@ def validate_workflow(root: Path) -> None:
         ):
             raise ValueError("isolated runtime evidence is not fresh-verified and fail-closed")
         terminal = jobs["merge"]
-        if (
-            terminal.get("name") != consumer_terminal_job_name(profile)
-            or terminal.get("if") != f"{SOURCE_JOB_GUARD} && always()"
-        ):
+        if terminal.get("name") != "CI / required" or terminal.get("if") != f"{SOURCE_JOB_GUARD} && always()":
             raise ValueError("merge gate has no stable fail-closed terminal job")
         terminal_needs = terminal.get("needs", [])
         if set(terminal_needs) != REQUIRED_JOBS - {"merge"}:
@@ -1167,7 +1162,7 @@ def validate_workflow(root: Path) -> None:
     }
     if continuous_events != expected_continuous_events:
         raise ValueError("continuous validation must cover source pull requests, merge groups, main, and schedule")
-    if continuous.get("name") == "Koios CI / merge gate":
+    if continuous.get("name") in set(PROFILE_WORKFLOW_NAMES.values()):
         raise ValueError("continuous validation must not impersonate merge admission")
     continuous_jobs = continuous.get("jobs", {})
     if not isinstance(continuous_jobs, dict) or set(continuous_jobs) != {"validation"}:

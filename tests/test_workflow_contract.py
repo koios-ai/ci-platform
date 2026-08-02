@@ -711,21 +711,20 @@ def test_final_success_promoter_is_exact_head_fail_closed_and_not_a_check_writer
     assert topology["permissions"] == permissions
 
 
-def test_only_immutable_fast_context_is_a_workflow_job_name() -> None:
-    """Catches source-repository jobs or reusable prefixes impersonating contexts."""
+def test_profile_terminals_use_static_ci_required_without_impersonating_other_contexts() -> None:
+    """Catches terminal expressions or profile jobs impersonating the other five ADR contexts."""
     counts = Counter(str(job.get("name")) for _, _, job, _ in iter_jobs() if job.get("name") in set(CONTEXTS))
 
-    assert all(counts[context] == 0 for context in CONTEXTS)
+    assert counts["CI / required"] == len(PROFILES)
+    assert all(counts[context] == 0 for context in set(CONTEXTS) - {"CI / required"})
 
     profile_workflows = load_contract()["x-merge-gate-v1"]["profile_workflows"]
     assert set(profile_workflows) == set(PROFILES)
-    for profile, relative_path in profile_workflows.items():
+    for relative_path in profile_workflows.values():
         workflow = load_workflow(Path(relative_path).name)
         terminal = workflow["jobs"]["merge"]
-        assert terminal["name"] == (
-            "${{ github.repository == 'koios-ai/ci-platform' "
-            f"&& 'Koios CI / {profile} consumer gate disabled' || 'CI / required' }}}}"
-        )
+        assert terminal["name"] == "CI / required"
+        assert "${{" not in terminal["name"]
         assert terminal["if"] == "github.repository != 'koios-ai/ci-platform' && always()"
 
 
