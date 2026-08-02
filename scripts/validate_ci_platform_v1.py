@@ -19,8 +19,8 @@ from typing import Any, cast
 import jsonschema
 import yaml
 from generate_merge_gate_profiles import (
+    PROFILE_WORKFLOW_NAMES,
     PROFILE_WORKFLOWS,
-    SOURCE_DISABLED_CONTEXTS,
     SOURCE_JOB_GUARD,
     SOURCE_REPOSITORY,
     generated_workflows,
@@ -76,14 +76,11 @@ PUBLICATION_EMAIL = re.compile(r"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-
 PUBLICATION_ALLOWED_NON_PERSONAL_ADDRESSES = {"git@github.com", "user@github.com"}
 
 
-def consumer_terminal_job_name(profile: str) -> str:
-    return (
-        f"${{{{ github.repository == '{SOURCE_REPOSITORY}' "
-        f"&& '{SOURCE_DISABLED_CONTEXTS[profile]}' || 'CI / required' }}}}"
-    )
-
-
 SHA = re.compile(r"^[0-9a-f]{40}$")
+JOB_ENV_UNAVAILABLE_DEREFERENCE = re.compile(
+    r"(?<![\w.])(?:job|runner)\b",
+    re.IGNORECASE,
+)
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 DEEPSOURCE_APP = {"id": 16372, "slug": "deepsource-io"}
 DEEPSOURCE_EXPECTED_CHECKS = [
@@ -111,6 +108,56 @@ DEEPSOURCE_SIGNAL_CHECKS = {
     "ai-review-readback": ["DeepSource: AI Review"],
     "coverage": ["DeepSource: Test coverage"],
 }
+
+
+def _github_expression_bodies(value: str) -> list[str]:
+    """Return expression bodies with quoted literals masked.
+
+    A delimiter-looking ``}}`` inside a quoted format string is content, not
+    the end of the GitHub expression. Masking literals also keeps prose such as
+    ``'runner.temp'`` from impersonating the unavailable runner root context.
+    """
+    bodies: list[str] = []
+    cursor = 0
+    while True:
+        start = value.find("${{", cursor)
+        if start < 0:
+            return bodies
+        index = start + 3
+        masked: list[str] = []
+        quote: str | None = None
+        while index < len(value):
+            character = value[index]
+            if quote is not None:
+                masked.append(" ")
+                if character == quote:
+                    if index + 1 < len(value) and value[index + 1] == quote:
+                        masked.append(" ")
+                        index += 2
+                        continue
+                    quote = None
+                index += 1
+                continue
+            if character in {"'", '"'}:
+                quote = character
+                masked.append(" ")
+                index += 1
+                continue
+            if value.startswith("}}", index):
+                bodies.append("".join(masked))
+                cursor = index + 2
+                break
+            masked.append(character)
+            index += 1
+        else:
+            return bodies
+
+
+def job_env_uses_unavailable_context(value: str) -> bool:
+    """Whether a job-level env scalar dereferences the root job/runner context."""
+    return any(JOB_ENV_UNAVAILABLE_DEREFERENCE.search(body) for body in _github_expression_bodies(value))
+
+
 SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
 
 
@@ -594,9 +641,11 @@ def validate_profile_contract(root: Path, *, as_of: dt.datetime | None = None) -
     }
     expected_source_repository_policy = {
         "repository": SOURCE_REPOSITORY,
-        "profile_workflow_jobs": "disabled",
+        "profile_workflow_jobs": "source-guarded",
         "consumer_required_context": "CI / required",
-        "source_disabled_contexts": SOURCE_DISABLED_CONTEXTS,
+        "hosted_profile_workflow_state": "disabled-in-source-repository",
+        "hosted_disable_readback_required": True,
+        "ruleset_concurrency_cancel_in_progress": False,
         "internal_workflow": ".github/workflows/continuous-validation.yml",
         "internal_job": "Koios CI / source validation",
         "internal_triggers": ["pull_request", "merge_group", "push-main", "schedule"],
@@ -859,6 +908,7 @@ def validate_profile_contract(root: Path, *, as_of: dt.datetime | None = None) -
     else:
         raise ValueError("GitHub Code Quality receipts are incomplete")
     required_blockers = {
+        "platform-source-profile-workflows-disabled-readback",
         "profile-ruleset-hosted-readback",
         "untrusted-runtime-evidence-hosted-canary",
         "runtime-output-bounded-supervisor-hosted-canary",
@@ -902,8 +952,8 @@ def validate_workflow(root: Path) -> None:
         path = root / ".github" / "workflows" / filename
         workflow = load_yaml(path)
         events = workflow.get("on")
-        if workflow.get("name") != "Koios CI / merge gate":
-            raise ValueError("merge gate has an unstable workflow name")
+        if workflow.get("name") != PROFILE_WORKFLOW_NAMES[profile]:
+            raise ValueError("merge gate has an unstable profile-qualified workflow name")
         if events != {"pull_request": None, "merge_group": None}:
             raise ValueError("source-bound merge gate must use only unfiltered pull_request and merge_group")
         if workflow.get("permissions") != {"contents": "read"}:
@@ -912,6 +962,8 @@ def validate_workflow(root: Path) -> None:
             raise ValueError("merge gate profile does not match its immutable source path")
         if f"merge-gate-v1-{profile}-" not in str(workflow.get("concurrency", {}).get("group", "")):
             raise ValueError("merge gate concurrency is not profile-scoped")
+        if "cancel-in-progress" in workflow.get("concurrency", {}):
+            raise ValueError("ruleset workflow must not configure cancel-in-progress")
         jobs = workflow.get("jobs")
         if not isinstance(jobs, dict) or set(jobs) != REQUIRED_JOBS:
             raise ValueError("merge gate job topology is not closed")
@@ -1046,10 +1098,7 @@ def validate_workflow(root: Path) -> None:
         ):
             raise ValueError("isolated runtime evidence is not fresh-verified and fail-closed")
         terminal = jobs["merge"]
-        if (
-            terminal.get("name") != consumer_terminal_job_name(profile)
-            or terminal.get("if") != f"{SOURCE_JOB_GUARD} && always()"
-        ):
+        if terminal.get("name") != "CI / required" or terminal.get("if") != f"{SOURCE_JOB_GUARD} && always()":
             raise ValueError("merge gate has no stable fail-closed terminal job")
         terminal_needs = terminal.get("needs", [])
         if set(terminal_needs) != REQUIRED_JOBS - {"merge"}:
@@ -1113,7 +1162,7 @@ def validate_workflow(root: Path) -> None:
     }
     if continuous_events != expected_continuous_events:
         raise ValueError("continuous validation must cover source pull requests, merge groups, main, and schedule")
-    if continuous.get("name") == "Koios CI / merge gate":
+    if continuous.get("name") in set(PROFILE_WORKFLOW_NAMES.values()):
         raise ValueError("continuous validation must not impersonate merge admission")
     continuous_jobs = continuous.get("jobs", {})
     if not isinstance(continuous_jobs, dict) or set(continuous_jobs) != {"validation"}:
@@ -1184,14 +1233,26 @@ def validate_workflow(root: Path) -> None:
     workflow_directory = root / ".github" / "workflows"
     for candidate_path in sorted((*workflow_directory.glob("*.yml"), *workflow_directory.glob("*.yaml"))):
         candidate = load_yaml(candidate_path)
+        candidate_jobs = candidate.get("jobs")
+        if not isinstance(candidate_jobs, dict):
+            raise ValueError(f"workflow has malformed jobs: {candidate_path.name}")
+        for job_id, job in candidate_jobs.items():
+            if not isinstance(job, dict):
+                raise ValueError(f"workflow has malformed job: {candidate_path.name}:{job_id}")
+            job_env = job.get("env", {})
+            if not isinstance(job_env, dict):
+                raise ValueError(f"workflow job env is malformed: {candidate_path.name}:{job_id}")
+            for name, value in job_env.items():
+                raw = str(value)
+                if job_env_uses_unavailable_context(raw):
+                    raise ValueError(
+                        f"workflow context is unavailable at job-level env scope: {candidate_path.name}:{job_id}:{name}"
+                    )
         candidate_event_names = workflow_event_names(candidate.get("on"))
         if not source_triggers & candidate_event_names:
             continue
         if candidate_path.name == internal_source_workflow:
             continue
-        candidate_jobs = candidate.get("jobs", {})
-        if not isinstance(candidate_jobs, dict):
-            raise ValueError(f"source-triggered workflow has malformed jobs: {candidate_path.name}")
         if any(
             not isinstance(job, dict) or not source_job_is_suppressed(job.get("if")) for job in candidate_jobs.values()
         ):

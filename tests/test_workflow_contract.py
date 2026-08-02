@@ -423,7 +423,7 @@ def test_platform_installs_a_trusted_lifecycle_invalidator_canary() -> None:
     assert workflow["concurrency"]["cancel-in-progress"] is True
     job = workflow["jobs"]["invalidate-final-labels"]
     assert job["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
-    assert job["permissions"] == {"contents": "read", "issues": "write", "pull-requests": "read"}
+    assert job["permissions"] == {"contents": "read", "pull-requests": "write"}
     checkout, action = iter_steps(job)
     assert checkout["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     assert checkout["with"] == {
@@ -452,8 +452,7 @@ def test_exact_head_finalizer_uses_github_native_non_cancelling_singleflight() -
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     }
     assert job["env"]["KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED"] == ("${{ vars.KOIOS_EXTERNAL_SINGLEFLIGHT_VERIFIED }}")
     command = next(str(step["run"]) for step in iter_steps(job) if "run" in step)
@@ -647,8 +646,7 @@ def test_final_success_promoter_is_exact_head_fail_closed_and_not_a_check_writer
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     }
     assert promoter["env"]["CI_PLATFORM_ROLE"] == "ai-review-promoter"
     condition = str(promoter["if"])
@@ -713,21 +711,20 @@ def test_final_success_promoter_is_exact_head_fail_closed_and_not_a_check_writer
     assert topology["permissions"] == permissions
 
 
-def test_only_immutable_fast_context_is_a_workflow_job_name() -> None:
-    """Catches source-repository jobs or reusable prefixes impersonating contexts."""
+def test_profile_terminals_use_static_ci_required_without_impersonating_other_contexts() -> None:
+    """Catches terminal expressions or profile jobs impersonating the other five ADR contexts."""
     counts = Counter(str(job.get("name")) for _, _, job, _ in iter_jobs() if job.get("name") in set(CONTEXTS))
 
-    assert all(counts[context] == 0 for context in CONTEXTS)
+    assert counts["CI / required"] == len(PROFILES)
+    assert all(counts[context] == 0 for context in set(CONTEXTS) - {"CI / required"})
 
     profile_workflows = load_contract()["x-merge-gate-v1"]["profile_workflows"]
     assert set(profile_workflows) == set(PROFILES)
-    for profile, relative_path in profile_workflows.items():
+    for relative_path in profile_workflows.values():
         workflow = load_workflow(Path(relative_path).name)
         terminal = workflow["jobs"]["merge"]
-        assert terminal["name"] == (
-            "${{ github.repository == 'koios-ai/ci-platform' "
-            f"&& 'Koios CI / {profile} consumer gate disabled' || 'CI / required' }}}}"
-        )
+        assert terminal["name"] == "CI / required"
+        assert "${{" not in terminal["name"]
         assert terminal["if"] == "github.repository != 'koios-ai/ci-platform' && always()"
 
 
@@ -747,7 +744,7 @@ def test_pr_head_execution_is_read_only_secret_free_and_without_oidc() -> None:
                 "persist-credentials": False,
                 "sparse-checkout": ".github/actions/invalidate-final-labels",
             }
-            assert permissions == {"contents": "read", "issues": "write", "pull-requests": "read"}
+            assert permissions == {"contents": "read", "pull-requests": "write"}
             continue
         assert permissions == {"contents": "read"}, (workflow_name, job_id, permissions)
         assert "id-token" not in permissions
@@ -823,6 +820,65 @@ def test_no_secret_inheritance_or_input_interpolation_in_shell() -> None:
             for step in iter_steps(job):
                 run = str(step.get("run", ""))
                 assert "${{ inputs." not in run, (path.name, step.get("name"))
+
+
+def test_job_level_env_never_uses_contexts_unavailable_at_job_scope() -> None:
+    """Catches zero-job workflow parse failures from job/runner contexts in a job env map."""
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    validator_path = ROOT / "scripts" / "validate_ci_platform_v1.py"
+    spec = importlib.util.spec_from_file_location("ci_platform_job_env_validator", validator_path)
+    assert spec is not None and spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = load_workflow(path.name)
+        for job_id, job in workflow.get("jobs", {}).items():
+            for name, value in job.get("env", {}).items():
+                raw = str(value)
+                assert not validator.job_env_uses_unavailable_context(raw), (
+                    path.name,
+                    job_id,
+                    name,
+                )
+
+
+def test_legacy_workflows_bind_runner_paths_and_provenance_at_step_scope() -> None:
+    """Catches moving valid runtime provenance or temp paths back into job-level env."""
+    required = load_workflow("required.yml")["jobs"]["required"]
+    assert set(required["env"]) == {"HEAD_SHA", "BASE_SHA"}
+    required_init = required["steps"][0]
+    assert required_init["name"] == "Initialize runner-scoped paths"
+    assert required_init["shell"] == "bash"
+    required_run = str(required_init["run"])
+    for binding in (
+        "CHANGED_FILES_PATH=$RUNNER_TEMP/ci-platform-changed-files.json",
+        "FAST_SELECTION_PATH=$RUNNER_TEMP/ci-platform-fast-selection.json",
+        "FAST_EVIDENCE_PATH=$RUNNER_TEMP/ci-platform-fast-test-summary.json",
+    ):
+        assert binding in required_run
+    assert required_run.count('>> "$GITHUB_ENV"') == 1
+
+    reusable = load_workflow("reusable-final.yml")
+    validate = reusable["jobs"]["validate-contract"]
+    assert not {name for name in validate["env"] if name.startswith("PLATFORM_")}
+    validate_step = validate["steps"][0]
+    assert validate_step["name"] == "Validate contract inputs and platform provenance"
+    assert validate_step["env"] == {
+        "PLATFORM_SHA": "${{ job.workflow_sha }}",
+        "PLATFORM_REPOSITORY": "${{ job.workflow_repository }}",
+        "PLATFORM_WORKFLOW_REF": "${{ job.workflow_ref }}",
+        "PLATFORM_WORKFLOW_FILE_PATH": "${{ job.workflow_file_path }}",
+    }
+
+    deterministic = reusable["jobs"]["deterministic"]
+    assert "EVIDENCE_DIR" not in deterministic["env"]
+    evidence_init = deterministic["steps"][0]
+    assert evidence_init["name"] == "Initialize deterministic evidence path"
+    assert evidence_init["shell"] == "bash"
+    assert "EVIDENCE_DIR=$RUNNER_TEMP/ci-platform-evidence" in evidence_init["run"]
+    assert '>> "$GITHUB_ENV"' in evidence_init["run"]
 
 
 def test_retention_is_bounded_and_manifest_is_verified_before_upload() -> None:

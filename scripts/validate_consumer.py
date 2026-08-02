@@ -133,8 +133,7 @@ ROLE_PERMISSIONS = {
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     },
     "ai-evaluator": {
         "checks": "read",
@@ -149,8 +148,7 @@ ROLE_PERMISSIONS = {
         "pull-requests": "read",
     },
     "label-controller": {
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     },
     "finalizer-dispatcher": {
         "actions": "write",
@@ -160,8 +158,7 @@ ROLE_PERMISSIONS = {
         "actions": "read",
         "checks": "read",
         "contents": "read",
-        "issues": "write",
-        "pull-requests": "read",
+        "pull-requests": "write",
     },
 }
 

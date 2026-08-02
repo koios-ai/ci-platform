@@ -17,8 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      issues: write
-      pull-requests: read
+      pull-requests: write
     env:
       CI_PLATFORM_ROLE: label-controller
       GH_TOKEN: ${{ github.token }}

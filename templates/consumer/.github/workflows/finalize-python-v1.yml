@@ -49,8 +49,7 @@ jobs:
       actions: read
       checks: read
       contents: read
-      issues: write
-      pull-requests: read
+      pull-requests: write
     env:
       GITHUB_TOKEN: ${{ github.token }}
       CI_PLATFORM_ROLE: exact-head-finalizer

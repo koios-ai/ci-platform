@@ -20,10 +20,15 @@ jobs:
     env:
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-      CHANGED_FILES_PATH: ${{ runner.temp }}/ci-platform-changed-files.json
-      FAST_SELECTION_PATH: ${{ runner.temp }}/ci-platform-fast-selection.json
-      FAST_EVIDENCE_PATH: ${{ runner.temp }}/ci-platform-fast-test-summary.json
     steps:
+      - name: Initialize runner-scoped paths
+        shell: bash
+        run: |
+          printf '%s\n' \
+            "CHANGED_FILES_PATH=$RUNNER_TEMP/ci-platform-changed-files.json" \
+            "FAST_SELECTION_PATH=$RUNNER_TEMP/ci-platform-fast-selection.json" \
+            "FAST_EVIDENCE_PATH=$RUNNER_TEMP/ci-platform-fast-test-summary.json" \
+            >> "$GITHUB_ENV"
       - name: Check out exact event head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

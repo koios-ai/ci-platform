@@ -202,7 +202,7 @@ def remove_pytest_basetemp(junit_path: pathlib.Path, purpose: str) -> None:
     remove_pytest_basetemp_path(pytest_basetemp_path(junit_path, purpose))
 
 
-def _trusted_pytest_config_bytes() -> bytes:
+def _immutable_pytest_ini_bytes() -> bytes:
     try:
         metadata = PYTEST_CONFIG.lstat()
     except OSError as error:
@@ -229,7 +229,7 @@ def validate_external_pytest_config(path: pathlib.Path) -> pathlib.Path:
         raise ValueError("external pytest config is not a regular file")
     if candidate.resolve(strict=True) != expected.resolve(strict=True):
         raise ValueError("external pytest config resolution changed")
-    if candidate.read_bytes() != _trusted_pytest_config_bytes():
+    if candidate.read_bytes() != _immutable_pytest_ini_bytes():
         raise ValueError("external pytest config bytes differ from the platform config")
     return candidate
 
@@ -252,7 +252,7 @@ def pytest_config_path(basetemp: pathlib.Path, target_root: pathlib.Path) -> pat
     """Return the exact checkout-local path used for one immutable pytest config."""
     root = _trusted_target_root(target_root)
     validated_basetemp = _validated_pytest_basetemp(basetemp)
-    config_digest = hashlib.sha256(_trusted_pytest_config_bytes()).hexdigest()
+    config_digest = hashlib.sha256(_immutable_pytest_ini_bytes()).hexdigest()
     identity = f"{validated_basetemp}\0{config_digest}".encode()
     digest = hashlib.sha256(identity).hexdigest()[:24]
     return root / f".ci-platform-pytest-config-{digest}" / "pytest.ini"
@@ -281,7 +281,7 @@ def stage_pytest_config(basetemp: pathlib.Path, target_root: pathlib.Path) -> pa
         raise ValueError("pytest config directory resolution changed")
     try:
         with config_path.open("xb") as handle:
-            handle.write(_trusted_pytest_config_bytes())
+            handle.write(_immutable_pytest_ini_bytes())
             handle.flush()
             os.fsync(handle.fileno())
     except BaseException:
@@ -326,7 +326,7 @@ def remove_pytest_config_path(
         raise ValueError("staged pytest config is not a regular file")
     changed_mode = bool(config_metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
     try:
-        changed_bytes = config_path.read_bytes() != _trusted_pytest_config_bytes()
+        changed_bytes = config_path.read_bytes() != _immutable_pytest_ini_bytes()
     except OSError:
         changed_bytes = True
     config_path.chmod(stat.S_IREAD | stat.S_IWRITE)

@@ -77,14 +77,15 @@ jobs:
       CHANGED_FILES_DIGEST: ${{ inputs.changed_files_digest }}
       PYTHON_VERSION: ${{ inputs.python_version }}
       RETENTION_DAYS: ${{ inputs.artifact_retention_days }}
-      PLATFORM_SHA: ${{ job.workflow_sha }}
-      PLATFORM_REPOSITORY: ${{ job.workflow_repository }}
-      PLATFORM_WORKFLOW_REF: ${{ job.workflow_ref }}
-      PLATFORM_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
     steps:
       - name: Validate contract inputs and platform provenance
         id: validate
         shell: bash
+        env:
+          PLATFORM_SHA: ${{ job.workflow_sha }}
+          PLATFORM_REPOSITORY: ${{ job.workflow_repository }}
+          PLATFORM_WORKFLOW_REF: ${{ job.workflow_ref }}
+          PLATFORM_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
         run: |
           python - <<'PY'
           import os
@@ -309,8 +310,11 @@ jobs:
       PLATFORM_SHA: ${{ needs.validate-contract.outputs.platform_sha }}
       PYTHON_VERSION: ${{ inputs.python_version }}
       SECURITY_EVIDENCE_DIGEST: ${{ needs.security.outputs.evidence_digest }}
-      EVIDENCE_DIR: ${{ runner.temp }}/ci-platform-evidence
     steps:
+      - name: Initialize deterministic evidence path
+        shell: bash
+        run: |
+          printf '%s\n' "EVIDENCE_DIR=$RUNNER_TEMP/ci-platform-evidence" >> "$GITHUB_ENV"
       - name: Check out exact head for deterministic analysis
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

@@ -67,14 +67,10 @@ PROFILE_WORKFLOWS = {
 }
 SOURCE_REPOSITORY = "koios-ai/ci-platform"
 SOURCE_REPOSITORY_GUARD = f"github.repository != '{SOURCE_REPOSITORY}'"
-SOURCE_DISABLED_JOB_NAMES = {profile: f"Koios CI / {profile} consumer gate disabled" for profile in PROFILE_WORKFLOWS}
 
 
-def consumer_terminal_job_name(profile: str) -> str:
-    return (
-        "${{ github.repository == 'koios-ai/ci-platform' "
-        f"&& 'Koios CI / {profile} consumer gate disabled' || 'CI / required' }}}}"
-    )
+def profile_workflow_display_name(profile: str) -> str:
+    return f"Koios CI / merge gate / {profile}"
 
 
 @cache
@@ -1486,7 +1482,7 @@ def test_merge_gate_v1_has_only_ruleset_events_and_no_provider_pass_synthesis() 
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     raw = workflow_path.read_text(encoding="utf-8")
 
-    assert workflow["name"] == "Koios CI / merge gate"
+    assert workflow["name"] == profile_workflow_display_name("baseline")
     assert workflow[True] == {"pull_request": None, "merge_group": None}
     assert "provider PASS" not in raw
     assert "merge_gate_policy.py" in raw
@@ -1558,30 +1554,60 @@ def test_merge_gate_v1_runs_trusted_policy_and_closed_native_runner_against_exac
     )
 
 
-def test_merge_gate_v1_is_the_only_source_bound_ruleset_candidate() -> None:
+def test_profile_merge_gates_are_the_only_source_bound_ruleset_candidates() -> None:
     """Catches profile routing relying on runtime properties or an extra competing required gate."""
     candidates: list[str] = []
+    expected_names = {profile_workflow_display_name(profile) for profile in PROFILE_WORKFLOWS}
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
         events = workflow.get(True, workflow.get("on", {})) if isinstance(workflow, dict) else {}
         if (
             isinstance(events, dict)
             and {"pull_request", "merge_group"} <= set(events)
-            and workflow.get("name") == "Koios CI / merge gate"
+            and workflow.get("name") in expected_names
         ):
             candidates.append(path.name)
     assert sorted(candidates) == sorted(PROFILE_WORKFLOWS.values())
     for profile, workflow_name in PROFILE_WORKFLOWS.items():
         workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"))
-        assert workflow["name"] == "Koios CI / merge gate"
+        assert workflow["name"] == profile_workflow_display_name(profile)
         assert workflow["env"] == {"CI_PLATFORM_PROFILE": profile}
         assert f"merge-gate-v1-{profile}-" in workflow["concurrency"]["group"]
         assert "env.CI_PLATFORM_PROFILE" not in workflow["concurrency"]["group"]
-        assert workflow["jobs"]["merge"]["name"] == consumer_terminal_job_name(profile)
+        assert workflow["jobs"]["merge"]["name"] == "CI / required"
     legacy = yaml.safe_load((ROOT / ".github/workflows/required.yml").read_text(encoding="utf-8"))
     assert legacy["name"] == "LEGACY / inactive required integrity"
     assert legacy.get(True, legacy.get("on")) == {"workflow_dispatch": None}
     assert legacy["jobs"]["required"]["name"] != "CI / required"
+
+
+def test_profile_workflows_have_unique_profile_qualified_display_names() -> None:
+    """Catches indistinguishable check suites from profile workflows sharing one display name."""
+    observed: dict[str, str] = {}
+    for profile, workflow_name in PROFILE_WORKFLOWS.items():
+        workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"))
+        observed[profile] = workflow["name"]
+
+    assert observed == {profile: profile_workflow_display_name(profile) for profile in PROFILE_WORKFLOWS}
+    assert len(set(observed.values())) == len(PROFILE_WORKFLOWS)
+
+
+def test_profile_terminal_job_names_are_static_required_contexts() -> None:
+    """Catches skipped jobs exposing an unevaluated expression as their hosted check name."""
+    for workflow_name in PROFILE_WORKFLOWS.values():
+        workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"))
+        terminal_name = workflow["jobs"]["merge"]["name"]
+
+        assert terminal_name == "CI / required"
+        assert "${{" not in terminal_name
+
+
+def test_ruleset_profile_workflows_never_cancel_in_progress_runs() -> None:
+    """Catches unsupported cancellation on organization ruleset workflows."""
+    for workflow_name in PROFILE_WORKFLOWS.values():
+        workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"))
+
+        assert "cancel-in-progress" not in workflow["concurrency"]
 
 
 def test_profile_workflows_are_deterministically_generated_and_ruleset_targeted_only() -> None:
@@ -1608,9 +1634,11 @@ def test_profile_workflows_are_deterministically_generated_and_ruleset_targeted_
     }
     assert contract["source_repository_policy"] == {
         "repository": SOURCE_REPOSITORY,
-        "profile_workflow_jobs": "disabled",
+        "profile_workflow_jobs": "source-guarded",
         "consumer_required_context": "CI / required",
-        "source_disabled_contexts": SOURCE_DISABLED_JOB_NAMES,
+        "hosted_profile_workflow_state": "disabled-in-source-repository",
+        "hosted_disable_readback_required": True,
+        "ruleset_concurrency_cancel_in_progress": False,
         "internal_workflow": ".github/workflows/continuous-validation.yml",
         "internal_job": "Koios CI / source validation",
         "internal_triggers": ["pull_request", "merge_group", "push-main", "schedule"],
@@ -1619,7 +1647,7 @@ def test_profile_workflows_are_deterministically_generated_and_ruleset_targeted_
 
 def test_all_profile_jobs_are_source_guarded_and_only_consumers_publish_ci_required() -> None:
     """Catches any generated profile self-triggering in the platform source repository."""
-    for profile, workflow_name in PROFILE_WORKFLOWS.items():
+    for workflow_name in PROFILE_WORKFLOWS.values():
         workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8"))
         for job_id, job in workflow["jobs"].items():
             condition = str(job.get("if", ""))
@@ -1627,7 +1655,7 @@ def test_all_profile_jobs_are_source_guarded_and_only_consumers_publish_ci_requi
                 f"{workflow_name}:{job_id} is not source-repository guarded"
             )
             assert "||" not in condition, f"{workflow_name}:{job_id} can bypass the source-repository guard"
-        assert workflow["jobs"]["merge"]["name"] == consumer_terminal_job_name(profile)
+        assert workflow["jobs"]["merge"]["name"] == "CI / required"
         assert workflow["jobs"]["merge"]["if"] == f"{SOURCE_REPOSITORY_GUARD} && always()"
 
 
@@ -2022,6 +2050,71 @@ def test_continuous_validation_provisions_pinned_runtime_and_dependencies() -> N
     assert by_name["Test platform with plugins disabled"]["env"] == {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
 
 
+@pytest.mark.parametrize(
+    "forbidden",
+    [
+        "${{ job.workflow_sha }}",
+        "${{ runner.temp }}/evidence",
+        "${{job.workflow_sha}}",
+        "${{  runner.temp }}",
+        "${{ job['workflow_sha'] }}",
+        '${{ runner["temp"] }}',
+        "${{ job [ 'workflow_sha' ] }}",
+        "${{ JOB.workflow_sha }}",
+        "${{ format('{0}', runner.temp) }}",
+        "${{ format('{{literal}} {0}', runner.temp) }}",
+        "${{ github.actor != '' && job['workflow_sha'] }}",
+        "${{ toJSON(runner) }}",
+        "${{ toJSON(job) }}",
+        "${{\n  format('{0}', runner.temp)\n}}",
+    ],
+)
+def test_validator_rejects_job_env_contexts_unavailable_at_job_scope(tmp_path: Path, forbidden: str) -> None:
+    """Catches a workflow GitHub rejects before creating any job."""
+    fixture = copy_contract_fixture(tmp_path)
+    path = fixture / ".github/workflows/continuous-validation.yml"
+    raw = path.read_text(encoding="utf-8")
+    if "\n" in forbidden:
+        serialized_value = "      FORBIDDEN_CONTEXT: |-\n" + "".join(
+            f"        {line}\n" for line in forbidden.splitlines()
+        )
+    else:
+        serialized_value = "      FORBIDDEN_CONTEXT: " + forbidden + "\n"
+    raw = raw.replace(
+        "    name: Koios CI / source validation\n",
+        "    name: Koios CI / source validation\n    env:\n" + serialized_value,
+        1,
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unavailable at job-level env scope"):
+        load_validator().validate_workflow(fixture)
+
+
+@pytest.mark.parametrize(
+    "allowed",
+    [
+        "${{ vars.runner.temp }}",
+        "${{ 'runner.temp' }}",
+        "${{ format('runner.temp') }}",
+        "${{ contains('prefix runner.temp', vars.value) }}",
+        "${{ contains('it''s job.workflow_sha', vars.value) }}",
+    ],
+)
+def test_validator_allows_non_root_job_runner_text_in_job_env(tmp_path: Path, allowed: str) -> None:
+    """Distinguishes unavailable root contexts from properties and quoted text."""
+    fixture = copy_contract_fixture(tmp_path)
+    path = fixture / ".github/workflows/continuous-validation.yml"
+    raw = path.read_text(encoding="utf-8").replace(
+        "    name: Koios CI / source validation\n",
+        f"    name: Koios CI / source validation\n    env:\n      ALLOWED_CONTEXT_TEXT: {allowed}\n",
+        1,
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    load_validator().validate_workflow(fixture)
+
+
 def test_v1_validator_rejects_a_floating_control_plane_python_minor(tmp_path: Path) -> None:
     """Catches setup-python silently resolving a newer patch in admission jobs."""
     fixture = copy_contract_fixture(tmp_path)
@@ -2060,9 +2153,11 @@ def test_v1_contract_keeps_merge_gate_release_explicitly_not_ready() -> None:
         },
         "source_repository_policy": {
             "repository": SOURCE_REPOSITORY,
-            "profile_workflow_jobs": "disabled",
+            "profile_workflow_jobs": "source-guarded",
             "consumer_required_context": "CI / required",
-            "source_disabled_contexts": SOURCE_DISABLED_JOB_NAMES,
+            "hosted_profile_workflow_state": "disabled-in-source-repository",
+            "hosted_disable_readback_required": True,
+            "ruleset_concurrency_cancel_in_progress": False,
             "internal_workflow": ".github/workflows/continuous-validation.yml",
             "internal_job": "Koios CI / source validation",
             "internal_triggers": ["pull_request", "merge_group", "push-main", "schedule"],
@@ -2111,6 +2206,7 @@ def test_v1_contract_keeps_merge_gate_release_explicitly_not_ready() -> None:
         "local_validation_authority": "structural-only-non-authoritative",
         "release_status": "NOT READY",
         "release_blockers": [
+            "platform-source-profile-workflows-disabled-readback",
             "profile-ruleset-hosted-readback",
             "draft-to-ready-hosted-rerun-canary",
             "merge-group-ai-mapping-canary",

@@ -239,11 +239,9 @@ def test_networked_yarn_build_rejects_candidate_registry_or_plugin_configuration
     build = tmp_path / "node-build"
     module._materialize_node_build(target, build, "yarn.lock")
     synthesized = (build / ".yarnrc.yml").read_text(encoding="utf-8")
-    assert "https://registry.npmjs.org" in synthesized
-    assert "enableScripts: false" in synthesized
-    assert "nodeLinker: node-modules" in synthesized
-    assert "attacker.invalid" not in synthesized
-    assert "plugins:" not in synthesized
+    assert synthesized == (
+        'nodeLinker: node-modules\nnpmRegistryServer: "https://registry.npmjs.org"\nenableScripts: false\n'
+    )
 
 
 @pytest.mark.parametrize(

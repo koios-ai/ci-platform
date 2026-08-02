@@ -15,11 +15,11 @@ PROFILE_WORKFLOWS = {
 }
 SOURCE_REPOSITORY = "koios-ai/ci-platform"
 SOURCE_JOB_GUARD = f"github.repository != '{SOURCE_REPOSITORY}'"
-SOURCE_DISABLED_CONTEXTS = {profile: f"Koios CI / {profile} consumer gate disabled" for profile in PROFILE_WORKFLOWS}
+PROFILE_WORKFLOW_NAMES = {profile: f"Koios CI / merge gate / {profile}" for profile in PROFILE_WORKFLOWS}
 PROFILE_MARKERS = (
+    f"name: {PROFILE_WORKFLOW_NAMES['baseline']}",
     "  CI_PLATFORM_PROFILE: baseline",
     "  group: merge-gate-v1-baseline-",
-    SOURCE_DISABLED_CONTEXTS["baseline"],
 )
 
 
@@ -36,17 +36,17 @@ def generated_workflows(root: Path) -> dict[Path, str]:
         profile_source = (
             source.replace(
                 PROFILE_MARKERS[0],
-                f"  CI_PLATFORM_PROFILE: {profile}",
+                f"name: {PROFILE_WORKFLOW_NAMES[profile]}",
                 1,
             )
             .replace(
                 PROFILE_MARKERS[1],
-                f"  group: merge-gate-v1-{profile}-",
+                f"  CI_PLATFORM_PROFILE: {profile}",
                 1,
             )
             .replace(
                 PROFILE_MARKERS[2],
-                SOURCE_DISABLED_CONTEXTS[profile],
+                f"  group: merge-gate-v1-{profile}-",
                 1,
             )
         )

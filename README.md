@@ -20,6 +20,13 @@ final-review cadence by themselves.
 > attestation for CodeRabbit and Codex, plus a bounded supported-release
 > manifest for staged fleet upgrades. The no-PAT dispatch topology is locally
 > implemented but remains hosted-unverified.
+> Hosted canary generation 2 exposed a least-privilege mismatch: a same-repo
+> trusted-base controller received `issues: write` but GitHub rejected both PR
+> label deletions with HTTP 403. The repair requests only
+> `pull-requests: write`; it remains unverified until that exact workflow is on
+> the protected default branch and a new labeled lifecycle canary proves both
+> deletions and absence readback. This does not change release or cutover
+> authority.
 
 ## Closed reusable contract
 
@@ -38,8 +45,8 @@ platform workflow and action to one literal full commit SHA recorded in
 ## Source-bound merge gate v1 (blocked release)
 
 Five immutable source workflows expose one stable terminal job/check context
-named `CI / required` only when GitHub evaluates them for consumer
-repositories; their workflow display name remains `Koios CI / merge gate`:
+named `CI / required` with no expression-based job naming. Their workflow
+display names are profile-qualified so hosted suites remain distinguishable:
 
 - `baseline` — `.github/workflows/merge-gate-v1.yml`;
 - `python` — `.github/workflows/merge-gate-python-v1.yml`;
@@ -51,10 +58,17 @@ The baseline file is canonical and
 `scripts/generate_merge_gate_profiles.py --check` rejects drift in the other
 four. Every file has only unfiltered `pull_request` and `merge_group` events,
 read-only permissions, an immutable profile constant, and a literal
-profile-scoped concurrency key. Every profile job is disabled when
-`github.repository == 'koios-ai/ci-platform'`; its skipped terminal uses a
-profile-specific `Koios CI / <profile> consumer gate disabled` name so the
-source repository produces neither `CI / required` nor colliding placeholders.
+profile-scoped, non-cancelling concurrency key. Ruleset workflows omit
+`cancel-in-progress` because cancellation is unsupported for this rule type.
+Every profile job remains source-guarded when
+`github.repository == 'koios-ai/ci-platform'`, while the terminal name stays
+the static consumer contract `CI / required`. Conditional skipped-job names are
+forbidden because GitHub can expose the unevaluated expression as the hosted
+check name. After the bootstrap change lands, disable all five merge-gate
+workflows in the platform source repository and capture an authenticated
+readback proving each is disabled; leave `continuous-validation.yml` enabled.
+Until that readback exists, source-side duplicate suites remain a release
+blocker and the workflows must not be used as consumer authority.
 The source repository instead has one distinct `continuous-validation.yml`
 gate for pull requests, merge groups, `main`, and schedules. After a pinned
 Python 3.12.13 install and `pip check`, it enforces generator drift, structural
@@ -144,6 +158,12 @@ named `LEGACY / inactive fast diagnostics`, so it cannot publish the stable
 `CI / required` context. Therefore
 the five mapped profile workflows are the complete source-bound
 `pull_request` plus `merge_group` candidate set for v1.
+Legacy workflows must still parse before hosted evidence can run: `job.*` and
+`runner.*` contexts are forbidden in job-level environment maps. Immutable
+workflow provenance is bound in step-level environment maps, while runner temp
+paths are exported by the first shell step through `GITHUB_ENV`. The
+PowerShell test wrapper derives every owned artifact path with `Join-Path`, so
+cleanup remains contained on Windows and Linux runners.
 
 The 2026-07-27 organization readback shows GitHub Code Quality disabled (the UI
 offers `Enable Code Quality`), with no context, threshold, configuration, or
@@ -364,8 +384,15 @@ installed platform canary workflow. It runs from the exact protected-base
 source on every new commit, reopen, or conversion to draft; removes both
 `ci-final` and `ai-review-ready`; retries only labels still present on an
 exact-head/lifecycle readback; and fails if absence cannot be proved.
-`invalidation_controller_verified` still defaults to false until a hosted
-canary proves event delivery, removal, and absence readback.
+The first two hosted delete canaries failed closed with HTTP 403 while the job
+received `issues: write` and `pull-requests: read`. GitHub documents the PR-label
+endpoint as accepting Pull requests write, so all label-mutating controller
+roles now request `pull-requests: write` and no Issues permission. Repository
+Issues remains disabled; broader workflow-token and PR-approval settings remain
+disabled. `invalidation_controller_verified` still defaults to false until the
+repaired workflow is on the protected default branch and a hosted labeled
+lifecycle canary proves event delivery, both deletions, and final absence
+readback.
 `ready_for_review` must never re-finalize automatically. Existing checks remain
 attached to an old SHA after a new commit and cannot satisfy the new head, but
 same-SHA lifecycle reuse still requires external enforcement.
@@ -538,34 +565,41 @@ pre-release canary work are authorized:
    mode, path, and content digest with a checkout-specific value.
 2. **Pre-release canary work:** protect its default branch with pull requests, CODEOWNERS, resolved
    conversations, stale-approval dismissal, and no force push or deletion.
-3. Promote the canary-only attestation into a protected supported-release
+3. After the bootstrap merge, disable `merge-gate-v1.yml`,
+   `merge-gate-python-v1.yml`, `merge-gate-node-v1.yml`,
+   `merge-gate-powershell-v1.yml`, and `merge-gate-critical-ml-v1.yml` in the
+   `koios-ai/ci-platform` Actions UI. Read back all five disabled states and
+   verify `continuous-validation.yml` remains enabled before any consumer
+   ruleset leaves Evaluate mode. Disabling the source workflows does not
+   replace the five organization ruleset mappings.
+4. Promote the canary-only attestation into a protected supported-release
    manifest before the first consumer pin. Each allowed full SHA must carry
    closed digests for its exact controller templates, evaluator, and
    CodeRabbit policy. Keep old releases supported during critical → hobby →
    professional canaries, then retire them deliberately; never accept
    arbitrary historical SHAs.
-4. Require GitHub-authored actions plus the pinned Codecov action, and enforce
+5. Require GitHub-authored actions plus the pinned Codecov action, and enforce
    full-length action SHAs.
-5. After every blocker in `x-rollout-status` is removed and re-audited, create
+6. After every blocker in `x-rollout-status` is removed and re-audited, create
    the five non-overlapping organization required-workflow rules from
    `x-merge-gate-v1.profile_rulesets`. Each
    `props.ci_profile:<profile>` target must require only its matching immutable
    merge-gate workflow on `~DEFAULT_BRANCH`. Assign `ci_profile` explicitly;
    do not rely on a default, inheritance, or an empty value. Start all five in
    Evaluate mode and use a named, audited break-glass actor only.
-6. Only after the same gate, require all six contexts in `contract/v1.json`,
+7. Only after the same gate, require all six contexts in `contract/v1.json`,
    bound to their observed
    publishers where GitHub supports source binding.
-7. Require the strict “branch must be up to date” ruleset setting. Until every
+8. Require the strict “branch must be up to date” ruleset setting. Until every
    required context is produced for a synthetic merge-group SHA, this is the
    only hosted rule preventing an unchanged PR head from reusing evidence that
    was bound internally to an older base SHA.
-8. Do **not** enable a merge-queue rule during the initial rollout. Only
+9. Do **not** enable a merge-queue rule during the initial rollout. Only
    `CI / required` currently binds the synthetic merge-group SHA; the five
    final Security, Coverage, and AI contexts are intentionally bound to the PR
    head. Requiring all six on a merge queue now would deadlock it.
-9. Keep paid Actions overage disabled. Budget exhaustion must stop merges.
-10. Canary one critical repository, one hobby repository, and one professional
+10. Keep paid Actions overage disabled. Budget exhaustion must stop merges.
+11. Canary one critical repository, one hobby repository, and one professional
     repository before organization-wide rollout.
 
 The hosted canary must prove a real job starts and completes. It must cover
