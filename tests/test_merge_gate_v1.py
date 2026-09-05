@@ -2387,13 +2387,18 @@ def test_valid_code_quality_receipts_can_close_only_their_release_blockers(tmp_p
     blockers.remove("github-code-quality-billing-cessation-readback")
     path.write_text(json.dumps(contract), encoding="utf-8")
 
-    load_validator().validate_profile_contract(fixture)
+    module = load_validator()
+    module.validate_profile_contract(
+        fixture,
+        as_of=module.dt.datetime(2026, 7, 27, 13, tzinfo=module.dt.UTC),
+    )
 
 
 @pytest.mark.parametrize(
     "mutation",
     [
         "stale",
+        "future",
         "bad-digest",
         "unauthenticated",
         "wrong-source",
@@ -2427,6 +2432,8 @@ def test_code_quality_receipts_reject_stale_malformed_or_contradictory_evidence(
 
     if mutation == "stale":
         access["captured_at"] = "2026-01-01T00:00:00Z"
+    elif mutation == "future":
+        access["captured_at"] = "2026-07-27T14:00:00Z"
     elif mutation == "bad-digest":
         access["sha256"] = "0" * 64
     elif mutation == "unauthenticated":
@@ -2446,7 +2453,11 @@ def test_code_quality_receipts_reject_stale_malformed_or_contradictory_evidence(
     path.write_text(json.dumps(contract), encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"Code Quality|receipt|captured|authentication|provider|state|reviewer"):
-        load_validator().validate_profile_contract(fixture)
+        module = load_validator()
+        module.validate_profile_contract(
+            fixture,
+            as_of=module.dt.datetime(2026, 7, 27, 13, tzinfo=module.dt.UTC),
+        )
 
 
 @pytest.mark.parametrize(

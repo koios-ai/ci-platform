@@ -12,5 +12,5 @@
   "history_publication": "sanitized-root-snapshot-only",
   "attestation_scope": "all-publication-files-except-this-manifest",
   "artifact_count": 128,
-  "artifact_tree_sha256": "da32ffcf923390b12b08f99cd2f17846a3672c4ab335b3499a564b38102fedd1"
+  "artifact_tree_sha256": "19fd2b833084aa7d94103005d37a4bd9b6a2edac7bb4ec38c91041210cd22a00"
 }
