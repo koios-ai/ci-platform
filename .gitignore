@@ -5,3 +5,7 @@ __pycache__/
 .superpowers/
 docs/superpowers/
 *.py[cod]
+AGENTS.override.md
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
