@@ -82,7 +82,7 @@ def _safe_path(value: Any) -> str:
     ):
         raise ValueError(f"changed-file list contains an unsafe path: {value!r}")
     parsed = pathlib.PurePosixPath(value)
-    if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+    if parsed.is_absolute() or any(part in {"", ".", ".."} for part in value.split("/")):
         raise ValueError(f"changed-file list contains an unsafe path: {value!r}")
     return parsed.as_posix()
 
@@ -207,11 +207,7 @@ def select_fast_tests(
         for path in changed_python
         if _is_test_like(path) and _under_roots(path, roots) and (root / pathlib.PurePosixPath(path)).is_file()
     }
-    changed_sources = [
-        path
-        for path in changed_python
-        if not _under_roots(path, roots) and (root / pathlib.PurePosixPath(path)).is_file()
-    ]
+    changed_sources = [path for path in changed_python if not _under_roots(path, roots)]
     if any(any(marker in path.lower() for marker in CRITICAL_MARKERS) for path in changed_sources):
         selected.update(
             path for category in sorted(policy["critical_tests"]) for path in policy["critical_tests"][category]

@@ -72,78 +72,16 @@ jobs:
       - name: Classify changed scope
         id: scope
         shell: bash
-        working-directory: target
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import re
-          import subprocess
-
-          sha = re.compile(r"^[0-9a-f]{40}$")
-          head = os.environ["HEAD_SHA"]
-          base = os.environ["BASE_SHA"]
-          if not sha.fullmatch(head) or not sha.fullmatch(base):
-              raise SystemExit("event head/base SHA is malformed")
-          if subprocess.check_output(
-              ["git", "rev-parse", "HEAD"], text=True
-          ).strip() != head:
-              raise SystemExit("target checkout is not the exact event head")
-          subprocess.run(
-              ["git", "cat-file", "-e", f"{base}^{{commit}}"],
-              check=True,
-          )
-          raw = subprocess.check_output(
-              [
-                  "git",
-                  "diff",
-                  "--name-only",
-                  "--diff-filter=ACMRT",
-                  "-z",
-                  f"{base}...{head}",
-              ]
-          )
-          decoded = raw.decode("utf-8")
-          paths = sorted(set(filter(None, decoded.split("\0"))))
-          for value in paths:
-              candidate = pathlib.PurePosixPath(value)
-              if (
-                  candidate.is_absolute()
-                  or ".." in candidate.parts
-                  or "\\" in value
-                  or "\n" in value
-                  or "\r" in value
-              ):
-                  raise SystemExit(f"unsafe changed path: {value!r}")
-              if pathlib.Path(value).is_symlink():
-                  raise SystemExit(f"changed path is a symbolic link: {value!r}")
-          changed_path = pathlib.Path(os.environ["CHANGED_FILES_PATH"])
-          changed_path.write_text(
-              json.dumps(paths, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          digest = hashlib.sha256(
-              "".join(f"{path}\n" for path in paths).encode("utf-8")
-          ).hexdigest()
-          python_paths = [
-              path
-              for path in paths
-              if path.endswith(".py") and pathlib.Path(path).is_file()
-          ]
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"changed_files_digest={digest}\n")
-              output.write(f"has_python={str(bool(python_paths)).lower()}\n")
-              output.write(
-                  "python_paths="
-                  + json.dumps(python_paths, separators=(",", ":"))
-                  + "\n"
-              )
-          PY
+        run: >-
+          python platform/scripts/path_feed_evidence.py
+          --root target
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --output "$CHANGED_FILES_PATH"
+          --fast-output "$GITHUB_OUTPUT"
       - name: Select protected-base affected tests
         id: fast-tests
-        if: steps.scope.outputs.has_python == 'true'
+        if: steps.scope.outputs.has_python_changes == 'true'
         shell: bash
         run: >-
           python platform/scripts/fast_test_selection.py

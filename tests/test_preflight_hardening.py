@@ -554,16 +554,19 @@ def test_paginated_items_fails_closed_at_the_page_cap(
         )
 
 
-def test_main_refetches_pr_and_rejects_state_change_before_outputs(
+@pytest.mark.parametrize("state_changes", [False, True])
+def test_main_uses_verified_git_paths_and_refetches_before_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    state_changes: bool,
 ) -> None:
     """Catches emitting ready outputs after the label or PR state changed mid-flight."""
     module = load_preflight("preflight_pr_refetch")
     output_path = tmp_path / "outputs.txt"
     initial = pull_request()
     changed = json.loads(json.dumps(initial))
-    changed["labels"] = []
+    if state_changes:
+        changed["labels"] = []
     pull_reads = 0
 
     def request(
@@ -602,10 +605,15 @@ def test_main_refetches_pr_and_rejects_state_change_before_outputs(
             return [required_run()]
         if key == "check_runs":
             return [required_check()]
-        if key is None and path.endswith(f"/pulls/{PULL_REQUEST_NUMBER}/files"):
-            return [{"filename": "src/widget.py"}]
         raise AssertionError(f"unexpected pagination request: {path} ({key})")
 
+    def path_feed(repository: str, token: str, base: str, head: str, refresh: Any) -> list[str]:
+        assert (repository, base, head) == (TARGET_REPOSITORY, BASE_SHA, HEAD_SHA)
+        assert token == "test-token-that-must-not-appear-in-errors"
+        refresh()
+        return ["src/widget.py"]
+
+    monkeypatch.setattr(module, "acquire_changed_paths", path_feed, raising=False)
     monkeypatch.setattr(module, "api_request", request)
     monkeypatch.setattr(module, "paginated_items", pages)
     environment = {
@@ -625,10 +633,17 @@ def test_main_refetches_pr_and_rejects_state_change_before_outputs(
     for key, value in environment.items():
         monkeypatch.setenv(key, value)
 
-    with pytest.raises(ValueError):
+    if state_changes:
+        with pytest.raises(ValueError):
+            module.main()
+        assert not output_path.exists()
+    else:
         module.main()
+        outputs = dict(line.split("=", 1) for line in output_path.read_text().splitlines())
+        assert outputs["profile"] == "python"
+        assert outputs["changed_files_digest"] == module.canonical_changed_files_digest(["src/widget.py"])
+        assert outputs["ready"] == "true"
     assert pull_reads == 2
-    assert not output_path.exists()
 
 
 @pytest.mark.parametrize(

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
+import threading
 from pathlib import Path
-from types import ModuleType
+from queue import Queue
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -214,6 +217,187 @@ def test_policy_dependabot_identity_and_scope_are_bound_to_exact_head() -> None:
     assert module.evaluate(forged)["blocker"] != "dependabot-no-secret-finalization"
 
 
+def test_changed_paths_refuse_ambiguous_git_merge_base(tmp_path: Path) -> None:
+    """Crisscross history must refuse before Git can choose one ancestor."""
+    module = load_policy()
+    subprocess.run(["git", "init", "--quiet", "--template="], cwd=tmp_path, check=True, capture_output=True)
+
+    def git(*arguments: str, data: str | None = None) -> str:
+        return subprocess.check_output(
+            ["git", "-c", "user.name=CI", "-c", "user.email=ci@example.invalid", *arguments],
+            cwd=tmp_path,
+            input=data,
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+
+    tree = git("mktree", data="")
+    origin = git("commit-tree", tree, data="common")
+    left = git("commit-tree", tree, "-p", origin, data="left")
+    right = git("commit-tree", tree, "-p", origin, data="right")
+    base = git("commit-tree", tree, "-p", left, "-p", right, data="base")
+    head = git("commit-tree", tree, "-p", right, "-p", left, data="head")
+    assert set(git("merge-base", "--all", base, head).splitlines()) == {left, right}
+    event = {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}}
+
+    with pytest.raises(ValueError, match="unique merge base"):
+        module._changed_files(tmp_path, "pull_request", event)
+
+
+@pytest.mark.parametrize(
+    ("program", "timeout", "error", "message"),
+    [
+        ("import sys; sys.stderr.write('x' * 9_000)", 5.0, ValueError, "stderr output exceeds"),
+        ("import time; time.sleep(20)", 1.0, subprocess.TimeoutExpired, "timed out"),
+    ],
+    ids=["stderr-limit", "deadline"],
+)
+def test_bounded_git_reaps_child_on_refusal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    program: str,
+    timeout: float,
+    error: type[Exception],
+    message: str,
+) -> None:
+    module = load_policy()
+    original_popen = subprocess.Popen
+    children: list[subprocess.Popen[bytes]] = []
+
+    def capture_child(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        child = original_popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(module.subprocess, "Popen", capture_child)
+
+    with pytest.raises(error, match=message):
+        module._bounded_git([sys.executable, "-I", "-B", "-c", program], cwd=tmp_path, timeout=timeout, stdout_limit=24)
+
+    assert len(children) == 1
+    assert children[0].poll() is not None
+
+
+def test_bounded_git_reaps_after_second_reader_fails_to_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_policy()
+    original_popen = subprocess.Popen
+    original_start = threading.Thread.start
+    children: list[subprocess.Popen[bytes]] = []
+    started: list[threading.Thread] = []
+
+    def capture_child(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        child = original_popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    def refuse_second_reader(reader: threading.Thread) -> None:
+        if started:
+            raise RuntimeError("injected second reader start failure")
+        original_start(reader)
+        started.append(reader)
+
+    monkeypatch.setattr(module.subprocess, "Popen", capture_child)
+    monkeypatch.setattr(module.threading.Thread, "start", refuse_second_reader)
+    try:
+        with pytest.raises(RuntimeError, match="injected second reader start failure"):
+            module._bounded_git(
+                [sys.executable, "-I", "-B", "-c", "import time; time.sleep(20)"],
+                cwd=tmp_path,
+                timeout=5,
+                stdout_limit=24,
+            )
+
+        assert len(started) == len(children) == 1
+        assert children[0].poll() is not None
+        assert children[0].stderr is not None and children[0].stderr.closed
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=2)
+            if child.stderr is not None:
+                child.stderr.close()
+        for reader in started:
+            reader.join(timeout=2)
+
+
+def test_bounded_git_refuses_completed_child_after_deadline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_policy()
+    original_popen = subprocess.Popen
+    children: list[subprocess.Popen[bytes]] = []
+    queue: Queue[tuple[str, bytes]] = Queue()
+    clock = 0.0
+    reads = 0
+
+    def capture_child(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        child = original_popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    def late_queue_get(**kwargs: float) -> tuple[str, bytes]:
+        nonlocal clock, reads
+        value = queue.get(**kwargs)
+        reads += 1
+        if reads == 2:
+            assert children[0].wait(timeout=2) == 0
+            clock = 6.0
+        return value
+
+    monkeypatch.setattr(module.subprocess, "Popen", capture_child)
+    monkeypatch.setattr(module, "Queue", lambda: SimpleNamespace(put=queue.put, get=late_queue_get))
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: clock))
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        module._bounded_git(
+            [sys.executable, "-I", "-B", "-c", "print('complete')"],
+            cwd=tmp_path,
+            timeout=5,
+            stdout_limit=24,
+        )
+
+    assert reads == 2
+    assert len(children) == 1 and children[0].poll() == 0
+
+
+@pytest.mark.parametrize(
+    ("limit_name", "limit", "message"),
+    [
+        ("MAX_DIFF_BYTES", 24, "output exceeds"),
+        ("MAX_CHANGED_PATHS", 1, "too many changed paths"),
+    ],
+)
+def test_changed_paths_refuse_overflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    limit_name: str,
+    limit: int,
+    message: str,
+) -> None:
+    module = load_policy()
+    monkeypatch.setattr(module, limit_name, limit, raising=False)
+
+    def git(*arguments: str) -> str:
+        return subprocess.check_output(
+            ["git", "-c", "user.name=CI", "-c", "user.email=ci@example.invalid", *arguments],
+            cwd=tmp_path,
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+
+    git("init", "--quiet", "--template=")
+    git("commit", "--quiet", "--allow-empty", "-m", "base")
+    base = git("rev-parse", "HEAD")
+    for name in ("first_synthetic_module.py", "second_synthetic_module.py"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    git("add", "--", ".")
+    git("commit", "--quiet", "-m", "head")
+    head = git("rev-parse", "HEAD")
+    event = {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}}
+
+    with pytest.raises(ValueError, match=message):
+        module._changed_files(tmp_path, "pull_request", event)
+
+
 def test_dependabot_changed_files_include_deletions_and_both_rename_paths(tmp_path: Path) -> None:
     """Catches deleted or renamed source paths disappearing from dependency-only scope."""
     module = load_policy()
@@ -297,7 +481,7 @@ def test_dependabot_scope_includes_unchanged_source_of_a_copied_dependency_path(
     pull_request["head"]["sha"] = head_sha
     changed_files = module._changed_files(tmp_path, "pull_request", context["event"])
 
-    assert changed_files == ["src/unchanged.py", "requirements.txt"]
+    assert changed_files == ["requirements.txt", "src/unchanged.py"]
     pull_request["user"] = DEPENDABOT_USER
     context["changed_files"] = changed_files
     assert module.evaluate(context)["blocker"] == "dependabot-identity-or-scope-unverified"

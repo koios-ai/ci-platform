@@ -297,6 +297,14 @@ repository:
 - keeps bounded fast policy evaluation separate from all final-candidate
   dependency, test, security, and coverage execution.
 
+Final preflight keeps the repository read credential in the HTTPS broker.
+The Git worker runs as an unprivileged user in private Linux PID and network
+namespaces with a quota-limited temporary filesystem. After the worker exits,
+a fresh offline verifier reads a sealed object store. The fast lane and final
+evidence derive their paths using the same exact-commit Git diff. The preflight
+runner must provide non-interactive sudo and the Ubuntu native namespace tools.
+An unavailable launcher or incomplete transfer blocks final admission.
+
 The fast lane runs platform-owned structured-file validation or bounded Ruff
 format/lint against the target bytes plus the platform secret scan. It installs
 only the pinned platform toolchain; it does not install target dependencies,
