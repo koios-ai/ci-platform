@@ -95,6 +95,41 @@ def test_fast_selection_uses_direct_imports_and_never_falls_back_to_roots(
     )
 
 
+@pytest.mark.parametrize("new_path", [None, "docs/helper.md"], ids=["deleted", "renamed-away"])
+def test_missing_source_path_still_selects_existing_importer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    new_path: str | None,
+) -> None:
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    module = load_module(SCRIPTS / "fast_test_selection.py", "fast_test_selection_missing_source")
+    materialize(tmp_path)
+    old = "src/utils/helper.py"
+    if new_path is None:
+        (tmp_path / old).unlink()
+    else:
+        (tmp_path / new_path).parent.mkdir()
+        (tmp_path / old).rename(tmp_path / new_path)
+    changed = [old] if new_path is None else [new_path, old]
+
+    assert module.select_fast_tests(policy(), root=tmp_path, changed_paths=changed) == ["tests/test_helper.py"]
+
+
+@pytest.mark.parametrize("path", ["src/./helper.py", "./src/helper.py"])
+def test_changed_manifest_rejects_path_alias_before_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    path: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    module = load_module(SCRIPTS / "fast_test_selection.py", "fast_test_selection_path_alias")
+    manifest = tmp_path / "changed.json"
+    manifest.write_text(f'["{path}"]', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsafe path"):
+        module.load_changed_paths(manifest)
+
+
 def test_fast_selection_expands_critical_changes_only_to_explicit_manifest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

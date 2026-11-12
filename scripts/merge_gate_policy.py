@@ -5,10 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import signal
 import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any
+from queue import Empty, Queue
+from typing import Any, BinaryIO
 
 PROFILES = {"baseline", "python", "node", "powershell", "critical-ml"}
 PROFILE_WORKFLOWS = {
@@ -21,6 +27,9 @@ PROFILE_WORKFLOWS = {
 PROVIDER_STATES = {"success", "failure", "pending", "timeout", "missing", "rate-limited"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 WORKFLOW_REPOSITORY = "koios-ai/ci-platform"
+MAX_CHANGED_PATHS = 5_000
+MAX_DIFF_BYTES = 2_000_000
+MAX_GIT_DIAGNOSTIC_BYTES = 8_192
 DEPENDABOT_USER = {
     "login": "dependabot[bot]",
     "id": 49699333,
@@ -238,6 +247,73 @@ def evaluate(context: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _bounded_git(
+    command: list[str], *, cwd: Path, timeout: float, stdout_limit: int
+) -> subprocess.CompletedProcess[bytes]:
+    """Drain both pipes concurrently, with hard read limits and one deadline."""
+    deadline = time.monotonic() + timeout
+    started_readers: set[str] = set()
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env={**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=sys.platform != "win32",
+    )
+    try:
+        assert process.stdout is not None and process.stderr is not None
+        results: Queue[tuple[str, bytes | OSError]] = Queue()
+
+        def drain(stream: BinaryIO, name: str, limit: int) -> None:
+            try:
+                with stream:
+                    payload = stream.read(limit + 1)
+            except OSError as error:
+                results.put((name, error))
+            else:
+                results.put((name, payload))
+
+        limits = {"stdout": stdout_limit, "stderr": MAX_GIT_DIAGNOSTIC_BYTES}
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            threading.Thread(target=drain, args=(stream, name, limits[name]), daemon=True).start()
+            started_readers.add(name)
+
+        captured: dict[str, bytes] = {}
+        for _ in limits:
+            try:
+                name, output = results.get(timeout=max(0, deadline - time.monotonic()))
+            except Empty as error:
+                raise subprocess.TimeoutExpired(command, timeout) from error
+            if isinstance(output, OSError):
+                raise ValueError("Git output could not be read") from output
+            if len(output) > limits[name]:
+                raise ValueError(f"Git {name} output exceeds the byte limit")
+            captured[name] = output
+        code = process.wait(timeout=max(0, deadline - time.monotonic()))
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(command, timeout)
+        return subprocess.CompletedProcess(command, code, captured["stdout"], captured["stderr"])
+    finally:
+        try:
+            if process.returncode is None:
+                try:
+                    if sys.platform == "win32":
+                        if process.poll() is None:
+                            process.kill()
+                    else:
+                        os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=2)
+        finally:
+            # Started readers own their pipes. Closing those pipes here can block.
+            for name, unowned_pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
+                if unowned_pipe is not None and name not in started_readers:
+                    unowned_pipe.close()
+
+
 def _changed_files(target_root: Path, event_name: str, event: dict[str, Any]) -> list[str]:
     if event_name != "pull_request":
         return []
@@ -246,28 +322,53 @@ def _changed_files(target_root: Path, event_name: str, event: dict[str, Any]) ->
     head = _mapping(pull_request.get("head"), "pull-request head").get("sha")
     if not isinstance(base, str) or not SHA.fullmatch(base) or not isinstance(head, str) or not SHA.fullmatch(head):
         raise ValueError("pull-request diff SHAs are malformed")
-    completed = subprocess.run(
+    return git_changed_files(target_root, base, head)
+
+
+def git_changed_files(target_root: Path, base: str, head: str) -> list[str]:
+    """Derive the canonical path set from the exact commits and their unique merge base."""
+    if not SHA.fullmatch(base) or not SHA.fullmatch(head):
+        raise ValueError("pull-request diff SHAs are malformed")
+    git = ["git", "--no-replace-objects", "-c", "core.fsmonitor=false"]
+    merge_bases = _bounded_git(
+        [*git, "merge-base", "--all", base, head],
+        cwd=target_root,
+        timeout=20,
+        stdout_limit=MAX_GIT_DIAGNOSTIC_BYTES,
+    )
+    if merge_bases.returncode or merge_bases.stderr or not re.fullmatch(rb"[0-9a-f]{40}\r?\n", merge_bases.stdout):
+        raise ValueError("pull-request diff requires a unique merge base")
+    merge_base = merge_bases.stdout.decode("ascii").strip()
+    completed = _bounded_git(
         [
-            "git",
+            *git,
+            "-c",
+            "diff.renameLimit=5000",
             "diff",
+            "--no-ext-diff",
+            "--no-textconv",
             "--name-status",
             "-z",
-            "--find-renames",
-            "--find-copies",
+            "--find-renames=50%",
+            "--find-copies=50%",
             "--find-copies-harder",
             "--diff-filter=ACDMRTUXB",
-            f"{base}...{head}",
+            merge_base,
+            head,
+            "--",
         ],
         cwd=target_root,
-        check=True,
-        capture_output=True,
-        timeout=60,
+        timeout=40,
+        stdout_limit=MAX_DIFF_BYTES,
     )
+    completed.check_returncode()
+    if completed.stderr:
+        raise ValueError("Git did not produce a complete pull-request diff")
     fields = completed.stdout.split(b"\0")
     if not fields or fields[-1] != b"":
         raise ValueError("pull-request diff output is malformed")
     fields.pop()
-    changed_files: list[str] = []
+    seen: set[str] = set()
     index = 0
     while index < len(fields):
         try:
@@ -285,11 +386,15 @@ def _changed_files(target_root: Path, event_name: str, event: dict[str, Any]) ->
                 path = raw_path.decode("utf-8")
             except UnicodeDecodeError as error:
                 raise ValueError("pull-request diff path is not UTF-8") from error
-            if not path:
-                raise ValueError("pull-request diff path is empty")
-            changed_files.append(path)
+            if any(component in {"", ".", ".."} for component in path.split("/")) or any(
+                character in path for character in "\\\r\n"
+            ):
+                raise ValueError("pull-request diff path is unsafe")
+            seen.add(path)
+            if len(seen) > MAX_CHANGED_PATHS:
+                raise ValueError("pull-request diff has too many changed paths")
         index += path_count
-    return changed_files
+    return sorted(seen)
 
 
 def main() -> int:

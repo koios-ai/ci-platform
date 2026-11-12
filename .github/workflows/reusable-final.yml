@@ -336,41 +336,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Verify canonical changed-file evidence
         shell: bash
-        working-directory: target
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import subprocess
-
-          raw = subprocess.check_output(
-              [
-                  "git",
-                  "diff",
-                  "--name-only",
-                  "-z",
-                  "--diff-filter=ACMRD",
-                  f"{os.environ['BASE_SHA']}...{os.environ['HEAD_SHA']}",
-              ]
-          )
-          files = sorted(
-              value.decode("utf-8", "surrogateescape")
-              for value in raw.split(b"\0")
-              if value
-          )
-          canonical = "".join(f"{value}\n" for value in files).encode("utf-8")
-          digest = hashlib.sha256(canonical).hexdigest()
-          if digest != os.environ["CHANGED_FILES_DIGEST"]:
-              raise SystemExit("changed-file digest does not match the checked-out commits")
-          evidence = pathlib.Path(os.environ["EVIDENCE_DIR"])
-          evidence.mkdir(parents=True)
-          evidence.joinpath("changed-files.json").write_text(
-              json.dumps(files, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
+        run: >-
+          python platform/scripts/path_feed_evidence.py
+          --root target
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --output "$EVIDENCE_DIR/changed-files.json"
+          --verify-digest "$CHANGED_FILES_DIGEST"
       - name: Install fixed deterministic tooling
         shell: bash
         working-directory: target

@@ -929,7 +929,10 @@ def test_required_fast_lane_has_substantive_generic_gates() -> None:
     assert "python -m pip check" in raw
     assert "compileall" not in raw
     assert '"tests", "test"' not in raw
-    assert "changed path is a symbolic link" in raw
+    assert "platform/scripts/path_feed_evidence.py" in raw
+    assert "has_python_changes" in raw
+    path_feed = (ROOT / "scripts" / "path_feed_evidence.py").read_text(encoding="utf-8")
+    assert "changed path is a symbolic link" in path_feed
 
 
 def test_required_validator_uses_separate_exact_target_and_platform_trees() -> None:

@@ -30,7 +30,7 @@ outputs:
     description: API-confirmed current PR base.
     value: ${{ steps.preflight.outputs.base_sha }}
   changed_files_digest:
-    description: SHA-256 of the canonical API-derived changed-file list.
+    description: SHA-256 of the canonical Git changed-file list.
     value: ${{ steps.preflight.outputs.changed_files_digest }}
 runs:
   using: composite

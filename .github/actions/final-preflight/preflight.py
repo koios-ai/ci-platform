@@ -1,4 +1,4 @@
-"""Trusted metadata-only preflight for the reusable final CI lane."""
+"""Trusted final-candidate preflight for the reusable final CI lane."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 API_URL = "https://api.github.com"
@@ -687,6 +687,12 @@ def _write_outputs(values: Sequence[tuple[str, str]]) -> None:
             output.write(f"{name}={value}\n")
 
 
+def acquire_changed_paths(repository: str, token: str, base: str, head: str, refresh: Callable[[], None]) -> list[str]:
+    from path_feed_launcher import changed_paths
+
+    return changed_paths(repository, token, base, head, refresh)
+
+
 def main() -> None:
     token = os.environ.get("GH_TOKEN", "")
     repository = _require_repository(os.environ.get("GITHUB_REPOSITORY", ""))
@@ -790,36 +796,25 @@ def main() -> None:
         api_url=api_url,
     )
 
-    files_payload = paginated_items(
-        f"/repos/{repository}/pulls/{number}/files",
-        None,
-        token=token,
-        api_url=api_url,
-    )
-    if any(not isinstance(item, Mapping) for item in files_payload):
-        raise RuntimeError("GitHub returned malformed changed-file metadata")
-    paths = sorted(
-        {str(item["filename"]) for item in files_payload if isinstance(item.get("filename"), str) and item["filename"]}
-    )
-    if not paths or len(paths) != len(files_payload):
-        raise ValueError("final candidate has missing or duplicate changed-file metadata")
+    def refresh_pull_request() -> None:
+        refreshed = api_request("GET", pull_path, token=token, api_url=api_url)
+        if not isinstance(refreshed, Mapping) or refreshed.get("number") not in {
+            None,
+            number,
+        }:
+            raise RuntimeError("GitHub returned malformed refreshed pull request metadata")
+        refreshed_snapshot = pull_request_snapshot(
+            refreshed,
+            repository=repository,
+            event_head_sha=event_head,
+            event_base_sha=event_base,
+        )
+        if refreshed_snapshot != initial_snapshot:
+            raise ValueError("pull request state changed during final preflight")
+
+    paths = acquire_changed_paths(repository, token, event_base, event_head, refresh_pull_request)
     profile = classify_profile(paths)
     digest = canonical_changed_files_digest(paths)
-
-    refreshed = api_request("GET", pull_path, token=token, api_url=api_url)
-    if not isinstance(refreshed, Mapping) or refreshed.get("number") not in {
-        None,
-        number,
-    }:
-        raise RuntimeError("GitHub returned malformed refreshed pull request metadata")
-    refreshed_snapshot = pull_request_snapshot(
-        refreshed,
-        repository=repository,
-        event_head_sha=event_head,
-        event_base_sha=event_base,
-    )
-    if refreshed_snapshot != initial_snapshot:
-        raise ValueError("pull request state changed during final preflight")
 
     _write_outputs(
         (

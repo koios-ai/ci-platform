@@ -11,6 +11,6 @@
   "merge_freeze_release_permitted": false,
   "history_publication": "sanitized-root-snapshot-only",
   "attestation_scope": "all-publication-files-except-this-manifest",
-  "artifact_count": 130,
-  "artifact_tree_sha256": "3497cbad31505d466707d38f1d58fa954c375751b935026f4ac2bd6253bd6431"
+  "artifact_count": 138,
+  "artifact_tree_sha256": "9f060bd6e9d181e948db5176635caed7e452d8175f36d295be65be1916dbe649"
 }
